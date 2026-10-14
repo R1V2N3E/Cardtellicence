@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { loadOpportunities, useAsync } from '../api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, loadOpportunities, useAsync } from '../api';
 import { CardLink, Chips, ErrorBox, Header, Spinner, Thumb } from '../components/ui';
 import { ago, fmtEur, fmtJpy, fmtPct, fmtSigned, marginClass, yuyuteiImg } from '../format';
 import { BUY_LABEL, opportunityMargin, SELL_LABEL } from '../margin';
@@ -19,6 +19,19 @@ export function Deals() {
   const [settings] = useSettings();
   const [refresh, setRefresh] = useState(0);
   const { data, error, loading } = useAsync(() => loadOpportunities(refresh > 0), [refresh]);
+  // Live ECB rate, so margins follow the current exchange rate rather than the scan's.
+  const { data: liveFx, loading: fxLoading } = useAsync(() => api.fx(refresh > 0), [refresh]);
+  const fx = liveFx ?? data?.fx;
+  const busy = loading || fxLoading;
+  const [toast, setToast] = useState<string | null>(null);
+  const lastRefresh = useRef(0);
+  useEffect(() => {
+    if (!refresh || busy || lastRefresh.current === refresh) return;
+    lastRefresh.current = refresh;
+    setToast(error ? `Aktualisierung fehlgeschlagen: ${error}` : `Aktualisiert ✓ · Preise vom Scan ${ago(data?.generatedAt)} · Kurs EZB ${fx?.date ?? ''}`);
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [refresh, busy]);
   const [sort, setSort] = useState<Sort>('margin');
   const [setFilter, setSetFilter] = useState('all');
   const [text, setText] = useState('');
@@ -31,13 +44,13 @@ export function Deals() {
       .filter((o) => (o.cmTrend ?? 0) >= settings.minTrend)
       .filter((o) => setFilter === 'all' || o.setId === setFilter)
       .filter((o) => !q || o.nameJa.includes(q) || o.nameEn?.toLowerCase().includes(q) || o.id.toLowerCase().includes(q) || numberMatches(o.number, q))
-      .map((o) => ({ o, m: opportunityMargin(o, settings, data.fx.jpyToEur) }))
+      .map((o) => ({ o, m: opportunityMargin(o, settings, (fx ?? data.fx).jpyToEur) }))
       .filter(({ m }) => m.buy && (!onlyPositive || (m.marginEur ?? 0) > 0))
       .sort((a, b) =>
         sort === 'roi' ? (b.m.roi ?? -9) - (a.m.roi ?? -9) : sort === 'value' ? (b.m.sellEur ?? 0) - (a.m.sellEur ?? 0) : (b.m.marginEur ?? -1e9) - (a.m.marginEur ?? -1e9),
       )
       .slice(0, 200);
-  }, [data, settings, sort, setFilter, text, onlyPositive]);
+  }, [data, fx, settings, sort, setFilter, text, onlyPositive]);
 
   return (
     <>
@@ -49,11 +62,12 @@ export function Deals() {
             : 'Margen Japan → Deutschland'
         }
         right={
-          <button className="icon-btn" onClick={() => setRefresh((r) => r + 1)} aria-label="Neu laden">
+          <button className={`icon-btn ${busy ? 'spinning' : ''}`} disabled={busy} onClick={() => setRefresh((r) => r + 1)} aria-label="Neu laden">
             <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
           </button>
         }
       />
+      {toast && <div className="toast">{toast}</div>}
       <div className="toolbar">
         <input className="input" placeholder="Name, Set oder Nummer (116/80)…" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="row-scroll">
@@ -77,7 +91,7 @@ export function Deals() {
       {error && <ErrorBox message={`Scan konnte nicht geladen werden: ${error}`} />}
       {data && (
         <p className="hint">
-          1 € = {fmtJpy(1 / data.fx.jpyToEur)} (EZB {data.fx.date}) · {rows.length} Karten · min. Cardmarket {fmtEur(settings.minTrend)}
+          1 € = {fmtJpy(1 / (fx ?? data.fx).jpyToEur)} (EZB {(fx ?? data.fx).date}) · {rows.length} Karten · min. Cardmarket {fmtEur(settings.minTrend)}
         </p>
       )}
 

@@ -8,6 +8,6 @@
   "rewrites": [{ "source": "/((?!api/|data/|assets/|icons/).*)", "destination": "/index.html" }],
   "headers": [
     { "source": "/sw.js", "headers": [{ "key": "cache-control", "value": "no-cache" }] },
-    { "source": "/data/(.*)", "headers": [{ "key": "cache-control", "value": "public, max-age=600" }] }
+    { "source": "/data/(.*)", "headers": [{ "key": "cache-control", "value": "public, max-age=60, stale-while-revalidate=600" }] }
   ]
 }

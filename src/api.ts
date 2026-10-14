@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { IdentifyResult } from '../lib/identify';
-import type { CardReport, CardSummary, ChartPoint, HistoryFile, OpportunityFile } from '../lib/types';
+import type { CardReport, CardSummary, ChartPoint, FxRates, HistoryFile, OpportunityFile } from '../lib/types';
 import { readAccessCode } from './state';
 
 export interface LivePrice {
@@ -19,8 +19,8 @@ export class ApiError extends Error {
   }
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -34,7 +34,10 @@ export const api = {
   snkChart: (id: number, cond: string, range: string) =>
     getJson<{ points: ChartPoint[] }>(`/api/chart?source=snkrdunk&id=${id}&cond=${cond}&range=${range}`).then((r) => r.points),
   pcChart: (card: string) => getJson<{ ungraded: ChartPoint[]; psa10: ChartPoint[] }>(`/api/chart?source=pricecharting&card=${encodeURIComponent(card)}`),
-  opportunities: () => getJson<OpportunityFile>('/data/opportunities.json'),
+  // fresh: bypass browser, service-worker and CDN caches (manual refresh).
+  opportunities: (fresh = false) =>
+    getJson<OpportunityFile>(fresh ? `/data/opportunities.json?t=${Date.now()}` : '/data/opportunities.json', fresh ? { cache: 'no-store' } : undefined),
+  fx: (fresh = false) => getJson<FxRates>(fresh ? `/api/fx?t=${Date.now()}` : '/api/fx', fresh ? { cache: 'no-store' } : undefined),
   prices: (ids: string[]) =>
     getJson<{ prices: Record<string, LivePrice | null>; fetchedAt: string }>(`/api/prices?ids=${ids.map(encodeURIComponent).join(',')}`),
   identify: async (image: string): Promise<IdentifyResult> => {
@@ -52,7 +55,7 @@ export const api = {
 
 let oppCache: Promise<OpportunityFile> | null = null;
 export const loadOpportunities = (fresh = false) => {
-  if (fresh || !oppCache) oppCache = api.opportunities().catch((e) => ((oppCache = null), Promise.reject(e)));
+  if (fresh || !oppCache) oppCache = api.opportunities(fresh).catch((e) => ((oppCache = null), Promise.reject(e)));
   return oppCache;
 };
 
