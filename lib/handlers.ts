@@ -31,10 +31,11 @@ export async function searchHandler(req: Request) {
 }
 
 export async function cardHandler(req: Request) {
-  const id = new URL(req.url).searchParams.get('id') ?? '';
+  const url = new URL(req.url);
+  const id = url.searchParams.get('id') ?? '';
   if (!CARD_ID.test(id)) return fail('invalid card id', 400);
   try {
-    return json(await buildReport(id), 900);
+    return json(await buildReport(id, url.origin), 900);
   } catch (e) {
     return fail(e, 404);
   }

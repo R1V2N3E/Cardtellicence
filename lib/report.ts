@@ -4,8 +4,28 @@ import { mercariSearchUrl, searchMercari } from './mercari.js';
 import { findSnkrdunkId, getSnkrdunk } from './snkrdunk.js';
 import { cardmarketFor } from './prices.js';
 import { cardmarketUrl, getCard } from './tcgdex.js';
+import { cached, getJson } from './http.js';
 import { findYuyutei, yuyuteiSearchUrl } from './yuyutei.js';
-import type { CardReport, SourceResult } from './types.js';
+import type { CardReport, OpportunityFile, SourceResult, YuyuteiPrice } from './types.js';
+
+/**
+ * Yuyu-tei blocks some cloud IP ranges (including Vercel's). The daily scan runs elsewhere,
+ * so its stored price is the fallback when the live fetch fails.
+ */
+async function yuyuteiFromScan(origin: string | undefined, id: string): Promise<YuyuteiPrice | null> {
+  if (!origin) return null;
+  const file = await cached('scan-file', 10 * 60_000, () => getJson<OpportunityFile>(`${origin}/data/opportunities.json`));
+  const o = file.items.find((i) => i.id === id);
+  if (!o?.yytJpy || !o.yytUrl) return null;
+  const m = o.yytUrl.match(/card\/([a-z0-9]+)\/(\d+)/);
+  return {
+    url: o.yytUrl,
+    priceJpy: o.yytJpy,
+    stock: o.yytStock,
+    image: m ? `https://card.yuyu-tei.jp/poc/front/${m[1]}/${m[2]}.jpg` : null,
+    asOf: o.yytAsOf ?? file.generatedAt,
+  };
+}
 
 async function settle<T extends object>(p: Promise<T | null>, notFound: string, url?: string): Promise<SourceResult<T>> {
   try {
@@ -16,7 +36,7 @@ async function settle<T extends object>(p: Promise<T | null>, notFound: string, 
   }
 }
 
-export async function buildReport(id: string): Promise<CardReport> {
+export async function buildReport(id: string, origin?: string): Promise<CardReport> {
   const [{ raw, detail }, fx] = await Promise.all([getCard(id), getFx()]);
   const cardmarket = await cardmarketFor(raw).catch(() => null);
   const { setId, number, nameJa, nameEn, localId } = detail;
@@ -33,9 +53,13 @@ export async function buildReport(id: string): Promise<CardReport> {
 
   const [yuyutei, snkrdunk, mercari, pricecharting] = await Promise.all([
     settle(
-      findYuyutei(setId, number).then(
-        (r) => r && { url: r.url, priceJpy: r.priceJpy, stock: r.stock, image: r.image.replace('/100_140/', '/front/') },
-      ),
+      findYuyutei(setId, number)
+        .then((r) => r && { url: r.url, priceJpy: r.priceJpy, stock: r.stock, image: r.image.replace('/100_140/', '/front/') })
+        .catch(async (e) => {
+          const fromScan = await yuyuteiFromScan(origin, id).catch(() => null);
+          if (fromScan) return fromScan;
+          throw e;
+        }),
       'Not listed at Yuyu-tei',
       links['Yuyu-tei'],
     ),

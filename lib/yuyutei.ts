@@ -43,10 +43,21 @@ export function parseYuyuteiList(html: string): YuyuteiRow[] {
   return rows;
 }
 
+// Full desktop-browser headers; Yuyu-tei rejects bare requests from some networks.
+const BROWSER_HEADERS = {
+  'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'accept-language': 'ja-JP,ja;q=0.9,en;q=0.8',
+  'sec-fetch-dest': 'document',
+  'sec-fetch-mode': 'navigate',
+  'sec-fetch-site': 'none',
+  'upgrade-insecure-requests': '1',
+};
+
 export function getYuyuteiSet(setId: string): Promise<YuyuteiRow[]> {
   const code = yuyuteiCode(setId);
   return cached(`yyt:${code}`, 2 * 3600_000, async () => {
-    const html = await getText(`https://yuyu-tei.jp/sell/poc/s/${code}`);
+    const html = await getText(`https://yuyu-tei.jp/sell/poc/s/${code}`, { headers: BROWSER_HEADERS });
     // Unknown codes render a different (default) set; only keep rows of the requested one.
     return parseYuyuteiList(html).filter((r) => r.ver === code);
   });

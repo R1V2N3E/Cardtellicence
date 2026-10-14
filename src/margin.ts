@@ -41,10 +41,16 @@ export function computeMargin(buy: BuyOption | null, sellEur: number | null, jpy
   return { buy, buyEur, sellEur, marginEur, roi: marginEur != null && buyEur ? marginEur / buyEur : null };
 }
 
+/** "as of 12 Oct" when a carried-over shop price is older than a day. */
+function staleNote(asOf: string | null | undefined): string | undefined {
+  if (!asOf || Date.now() - Date.parse(asOf) < 36 * 3600_000) return undefined;
+  return `as of ${new Date(asOf).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+}
+
 export function opportunityMargin(o: Opportunity, s: Settings, jpyToEur: number): Margin {
   const options: BuyOption[] = [];
   if (o.yytJpy && (s.includeSoldOut || o.yytStock !== 0))
-    options.push({ source: 'yuyutei', label: 'Yuyu-tei', jpy: o.yytJpy, note: o.yytStock === 0 ? 'sold out' : undefined });
+    options.push({ source: 'yuyutei', label: 'Yuyu-tei', jpy: o.yytJpy, note: o.yytStock === 0 ? 'sold out' : staleNote(o.yytAsOf) });
   if (o.snkAskJpy) options.push({ source: 'snkrdunk', label: 'SNKRDUNK', jpy: o.snkAskJpy });
   const sell = s.sellRef === 'trend' ? o.cmTrend : s.sellRef === 'avg30' ? o.cmAvg30 : s.sellRef === 'low' ? o.cmLow : o.cmTrend;
   return computeMargin(pickBuy(options, s.buySource), sell, jpyToEur);

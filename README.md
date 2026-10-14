@@ -63,6 +63,8 @@ public/data/  scanner output: opportunities.json + history/<set>.json (price his
 ## Notes and limits
 
 - The Japanese sources are read from public web pages and endpoints, so a site redesign can break one adapter. Each source fails on its own and the rest of the page still works.
-  SNKRDUNK rate-limits bursts; the scanner only queries the top 80 cards, slowly.
+- **Yuyu-tei and PriceCharting block cloud servers** (Vercel and GitHub Actions get HTTP 403). The card page then uses the Yuyu-tei price stored by the last scan that reached it, labelled with its date. The scanner keeps such prices for up to 14 days. Deals rank on SNKRDUNK asks, which work everywhere.
+  To refresh Yuyu-tei prices, run `npm run scan` from a home connection and push `public/data/`.
+- SNKRDUNK rate-limits bursts. The scanner looks up every card worth €5+ one at a time (about 15 minutes) and stops after repeated errors.
 - Cardmarket and Yuyu-tei price *history* starts on the first scan and grows daily. SNKRDUNK and PriceCharting charts include their full history immediately.
 - Eevee Heroes (S6a), Shiny Star V (S4a) and Pokémon GO (S10b) have no card list in TCGdex yet, so they aren't scanned. Search still links out for them.

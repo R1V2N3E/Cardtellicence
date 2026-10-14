@@ -48,6 +48,7 @@ export function findPriceCharting(nameEn: string, localId: string): Promise<Pric
       headers: { 'user-agent': 'Mozilla/5.0' },
       signal: AbortSignal.timeout(12000),
     });
+    if (!res.ok) throw new Error(`PriceCharting blocked this server (HTTP ${res.status})`);
     const html = await res.text();
     if (res.url.includes('/game/')) {
       const page = parseProduct(html, res.url.split('?')[0]);

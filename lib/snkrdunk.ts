@@ -26,12 +26,17 @@ export function searchSnkrdunk(keywords: string): Promise<SnkrdunkHit[]> {
   });
 }
 
-/** Locate the exact Japanese card: labels look like "リザードンex SAR [SV2a 201/165](...)". */
-export async function findSnkrdunkId(setId: string, number: string): Promise<number | null> {
+/**
+ * Locate the exact Japanese card: labels look like "リザードンex SAR [SV2a 201/165](...) - ¥41,000".
+ * The price in the label is the current lowest ask, so one request gives both.
+ */
+export async function findSnkrdunk(setId: string, number: string): Promise<SnkrdunkHit | null> {
   const hits = await searchSnkrdunk(`${setId} ${number}`);
   const tag = `[${setId} ${number}]`.toLowerCase();
-  return hits.find((h) => h.label.toLowerCase().includes(tag))?.id ?? null;
+  return hits.find((h) => h.label.toLowerCase().includes(tag)) ?? null;
 }
+
+export const findSnkrdunkId = async (setId: string, number: string) => (await findSnkrdunk(setId, number))?.id ?? null;
 
 interface RawApparel {
   id: number;
@@ -39,11 +44,6 @@ interface RawApparel {
   usedMinPrice?: number;
   usedListingCount?: number;
   primaryMedia?: { imageUrl?: string };
-}
-
-/** Lowest ask only (one request) — used by the scanner. */
-export function getSnkrdunkAsk(id: number): Promise<number | null> {
-  return cached(`snk:ask:${id}`, 30 * 60_000, async () => (await getJson<RawApparel>(`${BASE}/v1/apparels/${id}`)).usedMinPrice || null);
 }
 
 export async function getSnkrdunk(id: number): Promise<SnkrdunkData> {

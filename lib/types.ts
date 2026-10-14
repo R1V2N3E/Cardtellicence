@@ -38,6 +38,7 @@ export interface YuyuteiPrice {
   priceJpy: number;
   stock: number | null; // null = unknown, 0 = sold out
   image: string | null;
+  asOf?: string; // set when the price comes from the daily scan instead of a live fetch
 }
 
 export interface SnkrdunkTrade {
@@ -120,7 +121,9 @@ export interface Opportunity {
   yytJpy: number | null;
   yytStock: number | null;
   yytUrl: string | null;
+  yytAsOf?: string | null; // date of the Yuyu-tei price when carried over from an earlier scan
   snkAskJpy: number | null;
+  snkId?: number | null;
 }
 
 export interface OpportunityFile {

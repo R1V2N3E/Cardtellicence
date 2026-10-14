@@ -201,7 +201,7 @@ function PriceTables({ r }: { r: CardReport }) {
           <Row
             label="Yuyu-tei shop price"
             value={fmtJpy(r.yuyutei.priceJpy)}
-            sub={`${eur(r.yuyutei.priceJpy)} · ${r.yuyutei.stock === 0 ? 'sold out' : r.yuyutei.stock != null ? `${r.yuyutei.stock} in stock` : 'stock unknown'}`}
+            sub={`${eur(r.yuyutei.priceJpy)} · ${r.yuyutei.stock === 0 ? 'sold out' : r.yuyutei.stock != null ? `${r.yuyutei.stock} in stock` : 'stock unknown'}${r.yuyutei.asOf ? ` · daily scan ${ago(r.yuyutei.asOf)}` : ''}`}
             href={r.yuyutei.url}
           />
         ) : (

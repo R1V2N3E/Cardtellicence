@@ -11,7 +11,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { getFx } from '../lib/fx.js';
 import { mapLimit } from '../lib/http.js';
-import { findSnkrdunkId, getSnkrdunkAsk } from '../lib/snkrdunk.js';
+import { findSnkrdunk } from '../lib/snkrdunk.js';
 import { cardmarketFor } from '../lib/prices.js';
 import { getRawCard, getSet, listSets, toSummary } from '../lib/tcgdex.js';
 import type { HistoryFile, Opportunity, OpportunityFile } from '../lib/types.js';
@@ -28,7 +28,9 @@ const DEFAULT_SETS = [
   'S12a', 'S11a', 'S8b', 'SM12a', 'SM11b', 'SM8b',
 ];
 const MIN_TREND_EUR = 3;
-const SNKRDUNK_TOP = 80;
+const SNK_MIN_EUR = 5;
+const SNK_MAX = 900;
+const YYT_CARRY_DAYS = 14;
 const HISTORY_DAYS = 400;
 
 const OUT_DIR = new URL('../public/data/', import.meta.url);
@@ -102,7 +104,7 @@ function writeHistory(items: Opportunity[]) {
 async function main() {
   const all = process.env.SCAN_ALL === '1';
   const known = new Set((await listSets()).map((s) => s.id));
-  const wanted = (process.env.SCAN_SETS?.split(',') ?? DEFAULT_SETS).map((s) => s.trim()).filter(Boolean);
+  const wanted = (process.env.SCAN_SETS ? process.env.SCAN_SETS.split(',') : DEFAULT_SETS).map((s) => s.trim()).filter(Boolean);
   const sets = wanted.filter((s) => known.has(s));
   const fx = await getFx();
   log(`scanning ${sets.length} sets, 1 JPY = ${fx.jpyToEur.toFixed(5)} EUR (${fx.date})`);
@@ -119,24 +121,63 @@ async function main() {
     }
   }
 
-  // SNKRDUNK lowest ask for the most promising cards (by Yuyu-tei margin, then by value).
-  const margin = (o: Opportunity) => (o.yytJpy ? o.cmTrend! - o.yytJpy * fx.jpyToEur : o.cmTrend! * 0.5);
-  const top = [...items].sort((a, b) => margin(b) - margin(a)).slice(0, SNKRDUNK_TOP);
-  await mapLimit(top, 2, async (o) => {
-    try {
-      const id = await findSnkrdunkId(o.setId, o.number);
-      if (id) o.snkAskJpy = await getSnkrdunkAsk(id);
-      await new Promise((r) => setTimeout(r, 300)); // be gentle with SNKRDUNK
-    } catch {
-      /* best effort */
-    }
-  });
-  log(`snkrdunk asks for ${top.filter((o) => o.snkAskJpy).length}/${top.length}`);
-
   mkdirSync(OUT_DIR, { recursive: true });
+  const outFile = new URL('opportunities.json', OUT_DIR);
+  const prev: OpportunityFile | null = existsSync(outFile) ? JSON.parse(readFileSync(outFile, 'utf8')) : null;
+  const prevById = new Map(prev?.items.map((o) => [o.id, o]) ?? []);
+
+  // Yuyu-tei blocks most cloud networks. When a set couldn't be read, keep the last known
+  // shop price (up to YYT_CARRY_DAYS old) and record its date so the app can show it.
+  const today = new Date().toISOString().slice(0, 10);
+  const carryCutoff = new Date(Date.now() - YYT_CARRY_DAYS * 86400_000).toISOString().slice(0, 10);
+  let carried = 0;
+  for (const o of items) {
+    if (o.yytJpy) continue;
+    const p = prevById.get(o.id);
+    const asOf = p?.yytAsOf ?? prev?.generatedAt.slice(0, 10);
+    if (p?.yytJpy && asOf && asOf >= carryCutoff) {
+      Object.assign(o, { yytJpy: p.yytJpy, yytStock: p.yytStock, yytUrl: p.yytUrl, yytAsOf: asOf });
+      carried++;
+    }
+  }
+  for (const o of items) if (o.yytJpy && !o.yytAsOf) o.yytAsOf = today;
+  if (carried) log(`carried over ${carried} Yuyu-tei prices from earlier scans`);
+
+  // SNKRDUNK lowest ask for every card worth at least SNK_MIN_EUR, most valuable first.
+  // One search request per card, sequential and slow to stay under its rate limit.
+  const queue = items.filter((o) => (o.cmTrend ?? 0) >= SNK_MIN_EUR).sort((a, b) => b.cmTrend! - a.cmTrend!).slice(0, SNK_MAX);
+  let failures = 0;
+  let found = 0;
+  for (const o of queue) {
+    if (failures >= 5) {
+      log('  snkrdunk: stopping after repeated errors');
+      break;
+    }
+    try {
+      const hit = await findSnkrdunk(o.setId, o.number);
+      failures = 0;
+      if (hit?.priceJpy) {
+        o.snkAskJpy = hit.priceJpy;
+        o.snkId = hit.id;
+        found++;
+      }
+    } catch (e) {
+      failures++;
+      log(`  snkrdunk ${o.id}: ${(e as Error).message}`);
+    }
+    await new Promise((r) => setTimeout(r, 450));
+  }
+  log(`snkrdunk asks for ${found}/${queue.length}`);
+
+  // A partial scan (SCAN_SETS) refreshes only its sets and keeps the rest of the last scan.
+  if (process.env.SCAN_SETS && prev) {
+    const scanned = new Set(sets);
+    items.unshift(...prev.items.filter((o) => !scanned.has(o.setId)));
+    setMeta.unshift(...prev.sets.filter((s) => !scanned.has(s.id)));
+  }
   const file: OpportunityFile = { generatedAt: new Date().toISOString(), fx, sets: setMeta, items };
-  writeFileSync(new URL('opportunities.json', OUT_DIR), JSON.stringify(file));
-  writeHistory(items);
+  writeFileSync(outFile, JSON.stringify(file));
+  writeHistory(items.filter((o) => sets.includes(o.setId)));
   log(`wrote ${items.length} cards`);
 }
 
