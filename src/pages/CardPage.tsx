@@ -6,7 +6,8 @@ import { PriceChart, type Series } from '../components/PriceChart';
 import { Chips, ErrorBox, Header, Spinner } from '../components/ui';
 import { ago, cardImg, fmtEur, fmtJpy, fmtPct, fmtSigned, fmtUsd, marginClass, shortDate } from '../format';
 import { BUY_LABEL, computeMargin, pickBuy, reportBuyOptions, reportSell, SELL_LABEL } from '../margin';
-import { useSettings, useWatchlist, type BuySource, type SellRef } from '../state';
+import { useCollection, useSettings, useWatchlist, type BuySource, type SellRef } from '../state';
+import { AddSheet } from '../components/AddSheet';
 
 const COLORS = { snk: '#ff7a45', cm: '#4f8cff', cmAvg: '#8fb3ff', yyt: '#2ec27e', pc: '#c061cb' };
 type Range = 'oneWeek' | 'oneMonth' | 'threeMonths' | 'all';
@@ -21,6 +22,8 @@ export function CardPage() {
   const [sellRef, setSellRef] = useState<SellRef>(settings.sellRef);
   const [viewer, setViewer] = useState<number | null>(null);
   const [broken, setBroken] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState(false);
+  const collection = useCollection();
 
   const options = useMemo(() => (r ? reportBuyOptions(r, settings.includeSoldOut) : []), [r, settings.includeSoldOut]);
   const margin = useMemo(
@@ -40,8 +43,8 @@ export function CardPage() {
       });
   }, [r, margin]);
 
-  if (loading && !r) return (<><Header title="Card" back /><Spinner label="Checking Cardmarket, Yuyu-tei, SNKRDUNK, Mercari…" /></>);
-  if (error || !r) return (<><Header title="Card" back /><ErrorBox message={error ?? 'Not found'} /></>);
+  if (loading && !r) return (<><Header title="Karte" back /><Spinner label="Prüfe Cardmarket, Yuyu-tei, SNKRDUNK, Mercari…" /></>);
+  if (error || !r) return (<><Header title="Karte" back /><ErrorBox message={error ?? 'Nicht gefunden'} /></>);
 
   const { card, fx } = r;
   const images = [
@@ -52,6 +55,7 @@ export function CardPage() {
   ].filter(Boolean) as string[];
   const shown = [...new Set(images)].filter((src) => !broken.has(src));
   const watched = watch.has(card.id);
+  const owned = collection.items.filter((i) => i.cardId === card.id).reduce((n, i) => n + i.qty, 0);
 
   return (
     <>
@@ -62,7 +66,7 @@ export function CardPage() {
         right={
           <button
             className={`icon-btn ${watched ? 'starred' : ''}`}
-            aria-label={watched ? 'Remove from watchlist' : 'Add to watchlist'}
+            aria-label={watched ? 'Von Merkliste entfernen' : 'Zur Merkliste'}
             onClick={() =>
               watch.toggle({
                 id: card.id,
@@ -92,33 +96,36 @@ export function CardPage() {
               onError={() => setBroken((b) => new Set(b).add(src))}
             />
           ))}
-          {!shown.length && <div className="thumb ph gallery-ph">No photo available</div>}
+          {!shown.length && <div className="thumb ph gallery-ph">Kein Foto verfügbar</div>}
         </div>
         <div className="facts">
           <div className="name-ja">{card.nameJa}</div>
           {card.rarity && <span className="badge">{card.rarity}</span>}
-          {card.illustrator && <div className="muted">Illus. {card.illustrator}</div>}
-          {card.releaseDate && <div className="muted">Released {card.releaseDate}</div>}
+          {card.illustrator && <div className="muted">Illustration: {card.illustrator}</div>}
+          {card.releaseDate && <div className="muted">Erschienen {new Date(card.releaseDate).toLocaleDateString('de-DE')}</div>}
         </div>
+        <button className="primary-btn" onClick={() => setAdding(true)}>
+          + Zur Sammlung{owned ? ` (${owned} im Besitz)` : ''}
+        </button>
       </section>
 
       {/* Margin calculator */}
       <section className="panel margin-panel">
         <div className="margin-flow">
           <div>
-            <small>Buy in Japan</small>
+            <small>Kauf in Japan</small>
             <strong>{fmtJpy(margin?.buy?.jpy)}</strong>
-            <span className="muted">≈ {fmtEur(margin?.buyEur)} · {margin?.buy?.label ?? 'no offer'}</span>
+            <span className="muted">≈ {fmtEur(margin?.buyEur)} · {margin?.buy?.label ?? 'kein Angebot'}</span>
           </div>
           <div className="arrow">→</div>
           <div>
-            <small>Sell on Cardmarket</small>
+            <small>Verkauf auf Cardmarket</small>
             <strong>{fmtEur(margin?.sellEur)}</strong>
             <span className="muted">{SELL_LABEL[sellRef]}</span>
           </div>
         </div>
         <div className={`margin-result ${marginClass(margin?.marginEur)}`}>
-          <span>Margin</span>
+          <span>Marge</span>
           <strong>{fmtSigned(margin?.marginEur)}</strong>
           <span>{fmtPct(margin?.roi)} ROI</span>
         </div>
@@ -128,7 +135,7 @@ export function CardPage() {
         <div className="row-scroll">
           <Chips<SellRef> value={sellRef} onChange={setSellRef} options={(Object.keys(SELL_LABEL) as SellRef[]).map((k) => [k, SELL_LABEL[k]])} />
         </div>
-        <p className="hint">Rate: 1 € = {fmtJpy(1 / fx.jpyToEur)} (ECB {fx.date}). Fees, shipping and import VAT not included.</p>
+        <p className="hint">Kurs: 1 € = {fmtJpy(1 / fx.jpyToEur)} (EZB {fx.date}). Gebühren, Versand und Einfuhr-USt. nicht enthalten.</p>
       </section>
 
       <PriceTables r={r} />
@@ -137,7 +144,7 @@ export function CardPage() {
       <Graded r={r} />
 
       <section className="panel">
-        <h2>Open on</h2>
+        <h2>Öffnen bei</h2>
         <div className="links">
           {Object.entries(r.links).map(([label, url]) => (
             <a key={label} href={url} target="_blank" rel="noreferrer" className="link-btn">
@@ -145,17 +152,19 @@ export function CardPage() {
             </a>
           ))}
         </div>
-        <p className="hint">Prices fetched {ago(r.fetchedAt)}. Cardmarket = official daily price guide for the Japanese printing.</p>
+        <p className="hint">Preise abgerufen {ago(r.fetchedAt)}. Cardmarket = offizieller Tages-Preisguide der japanischen Ausgabe.</p>
       </section>
 
+      {adding && <AddSheet card={card} priceEur={r.cardmarket.ok ? r.cardmarket.trend : null} onClose={() => setAdding(false)} />}
+
       {viewer != null && (
-        <div className="viewer" onClick={() => setViewer(null)} role="dialog" aria-label="Photos">
+        <div className="viewer" onClick={() => setViewer(null)} role="dialog" aria-label="Fotos">
           <div className="viewer-strip" ref={(el) => el?.children[viewer]?.scrollIntoView({ inline: 'center' })}>
             {shown.map((src) => (
               <img key={src} src={src.replace('/low.webp', '/high.webp')} alt="" />
             ))}
           </div>
-          <div className="viewer-hint">Swipe for more · tap to close</div>
+          <div className="viewer-hint">Wischen für mehr · tippen zum Schließen</div>
         </div>
       )}
     </>
@@ -191,27 +200,27 @@ function PriceTables({ r }: { r: CardReport }) {
   return (
     <>
       <section className="panel">
-        <h2>🇩🇪 Cardmarket (sell)</h2>
+        <h2>🇩🇪 Cardmarket (Verkauf)</h2>
         {cm.ok ? (
           <>
-            <Row label="Price trend" value={fmtEur(cm.trend)} href={cm.url} />
-            <Row label="30-day average" value={fmtEur(cm.avg30)} />
-            <Row label="7-day average" value={fmtEur(cm.avg7)} />
-            <Row label="1-day average" value={fmtEur(cm.avg1)} />
-            <Row label="Lowest offer" value={fmtEur(cm.low)} />
-            {cm.matched === 'name' && <p className="hint">Product matched by set position. Check the listing before selling.</p>}
+            <Row label="Preistrend" value={fmtEur(cm.trend)} href={cm.url} />
+            <Row label="30-Tage-Durchschnitt" value={fmtEur(cm.avg30)} />
+            <Row label="7-Tage-Durchschnitt" value={fmtEur(cm.avg7)} />
+            <Row label="1-Tages-Durchschnitt" value={fmtEur(cm.avg1)} />
+            <Row label="Günstigstes Angebot" value={fmtEur(cm.low)} />
+            {cm.matched === 'name' && <p className="hint">Produkt über die Position im Set zugeordnet. Vor dem Verkauf das Angebot prüfen.</p>}
           </>
         ) : (
           <Unavailable label="Cardmarket" res={cm} />
         )}
       </section>
       <section className="panel">
-        <h2>🇯🇵 Japan (buy)</h2>
+        <h2>🇯🇵 Japan (Einkauf)</h2>
         {r.yuyutei.ok ? (
           <Row
-            label="Yuyu-tei shop price"
+            label="Yuyu-tei Shoppreis"
             value={fmtJpy(r.yuyutei.priceJpy)}
-            sub={`${eur(r.yuyutei.priceJpy)} · ${r.yuyutei.stock === 0 ? 'sold out' : r.yuyutei.stock != null ? `${r.yuyutei.stock} in stock` : 'stock unknown'}${r.yuyutei.asOf ? ` · daily scan ${ago(r.yuyutei.asOf)}` : ''}`}
+            sub={`${eur(r.yuyutei.priceJpy)} · ${r.yuyutei.stock === 0 ? 'ausverkauft' : r.yuyutei.stock != null ? `${r.yuyutei.stock} auf Lager` : 'Bestand unbekannt'}${r.yuyutei.asOf ? ` · Tages-Scan ${ago(r.yuyutei.asOf)}` : ''}`}
             href={r.yuyutei.url}
           />
         ) : (
@@ -219,16 +228,16 @@ function PriceTables({ r }: { r: CardReport }) {
         )}
         {r.snkrdunk.ok ? (
           <>
-            <Row label="SNKRDUNK lowest ask" value={fmtJpy(r.snkrdunk.lowestAskJpy)} sub={`${eur(r.snkrdunk.lowestAskJpy) ?? ''} · ${r.snkrdunk.listingCount ?? '?'} listings`} href={r.snkrdunk.url} />
-            <Row label="SNKRDUNK sold (A, 1-month median)" value={fmtJpy(r.snkrdunk.rawMedianJpy)} sub={eur(r.snkrdunk.rawMedianJpy)} />
+            <Row label="SNKRDUNK günstigstes Angebot" value={fmtJpy(r.snkrdunk.lowestAskJpy)} sub={`${eur(r.snkrdunk.lowestAskJpy) ?? ''} · ${r.snkrdunk.listingCount ?? '?'} Angebote`} href={r.snkrdunk.url} />
+            <Row label="SNKRDUNK verkauft (A, 1-Monats-Median)" value={fmtJpy(r.snkrdunk.rawMedianJpy)} sub={eur(r.snkrdunk.rawMedianJpy)} />
           </>
         ) : (
           <Unavailable label="SNKRDUNK" res={r.snkrdunk} />
         )}
         {r.mercari.ok ? (
           <>
-            <Row label="Mercari sold (median)" value={fmtJpy(r.mercari.soldMedianJpy)} sub={`${eur(r.mercari.soldMedianJpy) ?? ''} · ${r.mercari.soldCount} sold`} href={r.mercari.url} />
-            <Row label="Mercari lowest listing" value={fmtJpy(r.mercari.activeLowestJpy)} sub={eur(r.mercari.activeLowestJpy)} />
+            <Row label="Mercari verkauft (Median)" value={fmtJpy(r.mercari.soldMedianJpy)} sub={`${eur(r.mercari.soldMedianJpy) ?? ''} · ${r.mercari.soldCount} verkauft`} href={r.mercari.url} />
+            <Row label="Mercari günstigstes Angebot" value={fmtJpy(r.mercari.activeLowestJpy)} sub={eur(r.mercari.activeLowestJpy)} />
           </>
         ) : (
           <Unavailable label="Mercari" res={r.mercari} />
@@ -250,16 +259,16 @@ function Charts({ r }: { r: CardReport }) {
     const from = Date.now() - RANGE_DAYS[range] * 86400_000;
     const inRange = (p: ChartPoint[]) => p.filter((x) => x.t >= from);
     const jpy = (p: ChartPoint[]) => p.map((x) => ({ t: x.t, v: x.v * r.fx.jpyToEur }));
-    const out: Series[] = [{ label: mode === 'raw' ? 'SNKRDUNK sold (A)' : 'SNKRDUNK sold PSA10', points: jpy(snk.data ?? []), color: COLORS.snk }];
+    const out: Series[] = [{ label: mode === 'raw' ? 'SNKRDUNK verkauft (A)' : 'SNKRDUNK verkauft PSA10', points: jpy(snk.data ?? []), color: COLORS.snk }];
     if (mode === 'raw') {
       const rows = hist.data?.[r.card.id] ?? [];
       const at = (d: string) => Date.parse(d);
-      out.push({ label: 'Cardmarket trend', points: inRange(rows.filter((x) => x[1] != null).map((x) => ({ t: at(x[0]), v: x[1]! }))), color: COLORS.cm });
+      out.push({ label: 'Cardmarket-Trend', points: inRange(rows.filter((x) => x[1] != null).map((x) => ({ t: at(x[0]), v: x[1]! }))), color: COLORS.cm });
       out.push({ label: 'Yuyu-tei', points: inRange(rows.filter((x) => x[3] != null).map((x) => ({ t: at(x[0]), v: x[3]! * r.fx.jpyToEur }))), color: COLORS.yyt, stepped: true });
       // Current Cardmarket levels as reference lines across the visible range.
       if (r.cardmarket.ok && r.cardmarket.trend) {
         const start = Math.max(from, (snk.data?.[0]?.t ?? Date.now() - 30 * 86400_000));
-        out.push({ label: 'Cardmarket trend now', points: [{ t: start, v: r.cardmarket.trend }, { t: Date.now(), v: r.cardmarket.trend }], color: COLORS.cmAvg, dashed: true });
+        out.push({ label: 'Cardmarket-Trend aktuell', points: [{ t: start, v: r.cardmarket.trend }, { t: Date.now(), v: r.cardmarket.trend }], color: COLORS.cmAvg, dashed: true });
       }
     } else if (pc.data) {
       const usd = (p: ChartPoint[]) => p.map((x) => ({ t: x.t, v: x.v * r.fx.usdToEur }));
@@ -270,13 +279,13 @@ function Charts({ r }: { r: CardReport }) {
 
   return (
     <section className="panel">
-      <h2>Price history</h2>
+      <h2>Preisverlauf</h2>
       <div className="row-scroll">
-        <Chips value={mode} onChange={setMode} options={[['raw', 'Raw'], ['psa10', 'PSA 10']]} />
+        <Chips value={mode} onChange={setMode} options={[['raw', 'Roh'], ['psa10', 'PSA 10']]} />
         <Chips<Range> value={range} onChange={setRange} options={[['oneWeek', '1W'], ['oneMonth', '1M'], ['threeMonths', '3M'], ['all', 'All']]} />
       </div>
       {snk.loading && !snk.data ? <Spinner /> : <PriceChart series={series} />}
-      <p className="hint">All values in EUR at today’s ECB rate. Cardmarket and Yuyu-tei history builds up from the daily scan.</p>
+      <p className="hint">Alle Werte in EUR zum heutigen EZB-Kurs. Der Verlauf für Cardmarket und Yuyu-tei wächst mit dem täglichen Scan.</p>
     </section>
   );
 }
@@ -287,7 +296,7 @@ function RecentSales({ r }: { r: CardReport }) {
   const mercari = r.mercari.ok ? r.mercari.items : [];
   return (
     <section className="panel">
-      <h2>Last sales in Japan</h2>
+      <h2>Letzte Verkäufe in Japan</h2>
       <Chips value={tab} onChange={setTab} options={[['snk', `SNKRDUNK (${trades.length})`], ['mercari', `Mercari (${mercari.length})`]]} />
       {tab === 'snk' && (
         <ul className="sales">
@@ -299,7 +308,7 @@ function RecentSales({ r }: { r: CardReport }) {
               <span className="muted">{fmtEur(t.priceJpy * r.fx.jpyToEur)}</span>
             </li>
           ))}
-          {!trades.length && <li className="muted">No recent trades{!r.snkrdunk.ok ? ` (${r.snkrdunk.error})` : ''}.</li>}
+          {!trades.length && <li className="muted">Keine aktuellen Verkäufe{!r.snkrdunk.ok ? ` (${r.snkrdunk.error})` : ''}.</li>}
         </ul>
       )}
       {tab === 'mercari' && (
@@ -309,12 +318,12 @@ function RecentSales({ r }: { r: CardReport }) {
               <a href={m.url} target="_blank" rel="noreferrer" className="mercari-item">
                 {m.thumb && <img src={m.thumb} alt="" loading="lazy" />}
                 <span className="m-name">{m.name}</span>
-                <span className={m.sold ? 'badge small' : 'badge small live'}>{m.sold ? 'sold' : 'for sale'}</span>
+                <span className={m.sold ? 'badge small' : 'badge small live'}>{m.sold ? 'verkauft' : 'zu kaufen'}</span>
                 <strong>{fmtJpy(m.priceJpy)}</strong>
               </a>
             </li>
           ))}
-          {!mercari.length && <li className="muted">No matching listings{!r.mercari.ok ? ` (${r.mercari.error})` : ''}.</li>}
+          {!mercari.length && <li className="muted">Keine passenden Angebote{!r.mercari.ok ? ` (${r.mercari.error})` : ''}.</li>}
         </ul>
       )}
     </section>
@@ -329,24 +338,24 @@ function Graded({ r }: { r: CardReport }) {
   const intl10 = p?.psa10Usd ? p.psa10Usd * r.fx.usdToEur : null;
   return (
     <section className="panel">
-      <h2>Graded (PSA)</h2>
-      <Row label="🇯🇵 SNKRDUNK PSA10 sold" value={fmtJpy(s?.psa10MedianJpy)} sub={jp10 ? `≈ ${fmtEur(jp10)}` : undefined} />
-      <Row label="🇯🇵 SNKRDUNK PSA9 sold" value={fmtJpy(s?.psa9MedianJpy)} sub={s?.psa9MedianJpy ? `≈ ${fmtEur(s.psa9MedianJpy * r.fx.jpyToEur)}` : undefined} />
+      <h2>Gegradet (PSA)</h2>
+      <Row label="🇯🇵 SNKRDUNK PSA10 verkauft" value={fmtJpy(s?.psa10MedianJpy)} sub={jp10 ? `≈ ${fmtEur(jp10)}` : undefined} />
+      <Row label="🇯🇵 SNKRDUNK PSA9 verkauft" value={fmtJpy(s?.psa9MedianJpy)} sub={s?.psa9MedianJpy ? `≈ ${fmtEur(s.psa9MedianJpy * r.fx.jpyToEur)}` : undefined} />
       {p && (
         <>
           <Row label="🌍 PSA10 (eBay, PriceCharting)" value={fmtUsd(p.psa10Usd)} sub={intl10 ? `≈ ${fmtEur(intl10)}` : undefined} href={p.url} />
           <Row label="🌍 Grade 9" value={fmtUsd(p.grade9Usd)} sub={p.grade9Usd ? `≈ ${fmtEur(p.grade9Usd * r.fx.usdToEur)}` : undefined} />
-          <Row label="🌍 Ungraded" value={fmtUsd(p.ungradedUsd)} sub={p.ungradedUsd ? `≈ ${fmtEur(p.ungradedUsd * r.fx.usdToEur)}` : undefined} />
+          <Row label="🌍 Ungegradet" value={fmtUsd(p.ungradedUsd)} sub={p.ungradedUsd ? `≈ ${fmtEur(p.ungradedUsd * r.fx.usdToEur)}` : undefined} />
         </>
       )}
       {jp10 && intl10 && (
         <div className={`margin-result ${marginClass(intl10 - jp10)}`}>
-          <span>PSA10 spread</span>
+          <span>PSA10-Differenz</span>
           <strong>{fmtSigned(intl10 - jp10)}</strong>
           <span>{fmtPct((intl10 - jp10) / jp10)}</span>
         </div>
       )}
-      <p className="hint">Cardmarket has no graded price guide, so eBay sales (PriceCharting) are the international reference.</p>
+      <p className="hint">Cardmarket hat keinen Preisguide für gegradete Karten; eBay-Verkäufe (PriceCharting) dienen als internationale Referenz.</p>
     </section>
   );
 }

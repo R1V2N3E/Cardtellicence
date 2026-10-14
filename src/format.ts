@@ -13,14 +13,14 @@ export const fmtSigned = (v: number | null | undefined) => (v == null || !isFini
 export function ago(iso: string | null | undefined): string {
   if (!iso) return '';
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (s < 90) return 'just now';
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400 * 2) return `${Math.round(s / 3600)} h ago`;
-  return `${Math.round(s / 86400)} d ago`;
+  if (s < 90) return 'gerade eben';
+  if (s < 3600) return `vor ${Math.round(s / 60)} Min.`;
+  if (s < 86400 * 2) return `vor ${Math.round(s / 3600)} Std.`;
+  return `vor ${Math.round(s / 86400)} Tagen`;
 }
 
 export const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+  new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: '2-digit' });
 
 /** TCGdex image URLs need a quality suffix. */
 export const cardImg = (base: string | null | undefined, q: 'low' | 'high' = 'low') => (base ? `${base}/${q}.webp` : null);

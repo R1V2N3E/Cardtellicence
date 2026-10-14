@@ -45,21 +45,21 @@ export function Deals() {
         title="Deals"
         sub={
           data
-            ? `Buy ${BUY_LABEL[settings.buySource]} → sell Cardmarket ${SELL_LABEL[settings.sellRef]} · scanned ${ago(data.generatedAt)}`
-            : 'Japan → Germany margins'
+            ? `Kauf ${BUY_LABEL[settings.buySource]} → Verkauf Cardmarket ${SELL_LABEL[settings.sellRef]} · Scan ${ago(data.generatedAt)}`
+            : 'Margen Japan → Deutschland'
         }
         right={
-          <button className="icon-btn" onClick={() => setRefresh((r) => r + 1)} aria-label="Reload">
+          <button className="icon-btn" onClick={() => setRefresh((r) => r + 1)} aria-label="Neu laden">
             <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
           </button>
         }
       />
       <div className="toolbar">
-        <input className="input" placeholder="Filter by name, set or number (116/80)…" value={text} onChange={(e) => setText(e.target.value)} />
+        <input className="input" placeholder="Name, Set oder Nummer (116/80)…" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="row-scroll">
-          <Chips<Sort> value={sort} onChange={setSort} options={[['margin', 'Margin €'], ['roi', 'ROI %'], ['value', 'Value']]} />
+          <Chips<Sort> value={sort} onChange={setSort} options={[['margin', 'Marge €'], ['roi', 'ROI %'], ['value', 'Wert']]} />
           <select className="select" value={setFilter} onChange={(e) => setSetFilter(e.target.value)} aria-label="Set">
-            <option value="all">All sets</option>
+            <option value="all">Alle Sets</option>
             {data?.sets.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.id} · {s.name}
@@ -68,16 +68,16 @@ export function Deals() {
           </select>
           <label className="toggle">
             <input type="checkbox" checked={onlyPositive} onChange={(e) => setOnlyPositive(e.target.checked)} />
-            Profitable only
+            Nur profitable
           </label>
         </div>
       </div>
 
-      {loading && !data && <Spinner label="Loading daily scan…" />}
-      {error && <ErrorBox message={`Could not load scan: ${error}`} />}
+      {loading && !data && <Spinner label="Tages-Scan wird geladen…" />}
+      {error && <ErrorBox message={`Scan konnte nicht geladen werden: ${error}`} />}
       {data && (
         <p className="hint">
-          1 € = {fmtJpy(1 / data.fx.jpyToEur)} (ECB {data.fx.date}) · {rows.length} cards · min. Cardmarket {fmtEur(settings.minTrend)}
+          1 € = {fmtJpy(1 / data.fx.jpyToEur)} (EZB {data.fx.date}) · {rows.length} Karten · min. Cardmarket {fmtEur(settings.minTrend)}
         </p>
       )}
 
@@ -107,7 +107,7 @@ export function Deals() {
           </li>
         ))}
       </ul>
-      {data && !rows.length && <p className="empty">No cards match. Lower the minimum price in Settings or include sold-out stock.</p>}
+      {data && !rows.length && <p className="empty">Keine Treffer. Senke den Mindestpreis in den Einstellungen oder zeige ausverkaufte Karten.</p>}
     </>
   );
 }

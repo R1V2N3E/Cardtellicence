@@ -45,14 +45,14 @@ export function Search() {
 
   return (
     <>
-      <Header title="Search" sub="Name (EN/DE/JP) · number like 116/80 · set + number" />
+      <Header title="Suche" sub="Name (DE/EN/JP) · Nummer wie 116/80 · Set + Nummer" />
       <div className="toolbar">
         <input
           className="input big"
           type="search"
           autoCapitalize="off"
           autoCorrect="off"
-          placeholder="e.g. Glurak, 116/80, SV2a 201"
+          placeholder="z. B. Glurak, 116/80, SV2a 201"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && setParams(input ? { q: input } : {})}
@@ -67,9 +67,9 @@ export function Search() {
           </div>
         )}
       </div>
-      {state.loading && <Spinner label="Searching…" />}
+      {state.loading && <Spinner label="Suche…" />}
       {state.error && <ErrorBox message={state.error} />}
-      {state.results && !state.results.length && !state.loading && <p className="empty">No Japanese cards found for “{q}”.</p>}
+      {state.results && !state.results.length && !state.loading && <p className="empty">Keine japanischen Karten für „{q}“ gefunden.</p>}
       <div className="grid">
         {results.map((c) => {
           const o = opps.get(c.id);

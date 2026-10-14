@@ -11,7 +11,15 @@ function devApi(): Plugin {
         if (!match) return next();
         try {
           const mod = await server.ssrLoadModule(`/api/${match[1]}.ts`);
-          const response: Response = await mod.GET(new Request(`http://localhost${req.url}`));
+          const method = req.method ?? 'GET';
+          const chunks: Buffer[] = [];
+          if (method === 'POST') for await (const c of req) chunks.push(c as Buffer);
+          const request = new Request(`http://localhost${req.url}`, {
+            method,
+            headers: req.headers as Record<string, string>,
+            body: method === 'POST' ? Buffer.concat(chunks) : undefined,
+          });
+          const response: Response = await mod[method](request);
           res.statusCode = response.status;
           response.headers.forEach((v, k) => res.setHeader(k, v));
           res.end(Buffer.from(await response.arrayBuffer()));

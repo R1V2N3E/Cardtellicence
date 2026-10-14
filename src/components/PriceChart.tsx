@@ -60,7 +60,7 @@ export function PriceChart({ series, height = 220 }: { series: Series[]; height?
         animation: false,
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
         scales: {
-          x: { type: 'time', time: { tooltipFormat: 'dd MMM yyyy' }, grid: { color: grid }, ticks: { color: muted, maxTicksLimit: 5 } },
+          x: { type: 'time', time: { tooltipFormat: 'dd.MM.yyyy' }, grid: { color: grid }, ticks: { color: muted, maxTicksLimit: 5 } },
           y: { grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtEur(Number(v)), maxTicksLimit: 6 } },
         },
         plugins: {
@@ -75,7 +75,7 @@ export function PriceChart({ series, height = 220 }: { series: Series[]; height?
   const empty = series.every((s) => !s.points.length);
   return (
     <div className="chart" style={{ height }}>
-      {empty ? <div className="chart-empty">No sales data for this range</div> : <canvas ref={canvas} />}
+      {empty ? <div className="chart-empty">Keine Verkaufsdaten in diesem Zeitraum</div> : <canvas ref={canvas} />}
     </div>
   );
 }

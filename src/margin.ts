@@ -18,16 +18,16 @@ export interface Margin {
 }
 
 export const BUY_LABEL: Record<BuySource, string> = {
-  cheapest: 'Cheapest',
+  cheapest: 'Günstigster',
   yuyutei: 'Yuyu-tei',
   snkrdunk: 'SNKRDUNK',
   mercari: 'Mercari',
 };
 export const SELL_LABEL: Record<SellRef, string> = {
   trend: 'Trend',
-  avg30: '30-day avg',
-  avg7: '7-day avg',
-  low: 'Lowest',
+  avg30: '30-Tage-Ø',
+  avg7: '7-Tage-Ø',
+  low: 'Niedrigster',
 };
 
 export function pickBuy(options: BuyOption[], source: BuySource): BuyOption | null {
@@ -44,13 +44,13 @@ export function computeMargin(buy: BuyOption | null, sellEur: number | null, jpy
 /** "as of 12 Oct" when a carried-over shop price is older than a day. */
 function staleNote(asOf: string | null | undefined): string | undefined {
   if (!asOf || Date.now() - Date.parse(asOf) < 36 * 3600_000) return undefined;
-  return `as of ${new Date(asOf).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+  return `Stand ${new Date(asOf).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}`;
 }
 
 export function opportunityMargin(o: Opportunity, s: Settings, jpyToEur: number): Margin {
   const options: BuyOption[] = [];
   if (o.yytJpy && (s.includeSoldOut || o.yytStock !== 0))
-    options.push({ source: 'yuyutei', label: 'Yuyu-tei', jpy: o.yytJpy, note: o.yytStock === 0 ? 'sold out' : staleNote(o.yytAsOf) });
+    options.push({ source: 'yuyutei', label: 'Yuyu-tei', jpy: o.yytJpy, note: o.yytStock === 0 ? 'ausverkauft' : staleNote(o.yytAsOf) });
   if (o.snkAskJpy) options.push({ source: 'snkrdunk', label: 'SNKRDUNK', jpy: o.snkAskJpy });
   const sell = s.sellRef === 'trend' ? o.cmTrend : s.sellRef === 'avg30' ? o.cmAvg30 : s.sellRef === 'low' ? o.cmLow : o.cmTrend;
   return computeMargin(pickBuy(options, s.buySource), sell, jpyToEur);
@@ -63,7 +63,7 @@ export function reportBuyOptions(r: CardReport, includeSoldOut: boolean): BuyOpt
       source: 'yuyutei',
       label: 'Yuyu-tei',
       jpy: r.yuyutei.priceJpy,
-      note: r.yuyutei.stock === 0 ? 'sold out' : r.yuyutei.stock != null ? `${r.yuyutei.stock} in stock` : undefined,
+      note: r.yuyutei.stock === 0 ? 'ausverkauft' : r.yuyutei.stock != null ? `${r.yuyutei.stock} auf Lager` : undefined,
       url: r.yuyutei.url,
     });
   if (r.snkrdunk.ok && r.snkrdunk.lowestAskJpy)
@@ -71,11 +71,11 @@ export function reportBuyOptions(r: CardReport, includeSoldOut: boolean): BuyOpt
       source: 'snkrdunk',
       label: 'SNKRDUNK',
       jpy: r.snkrdunk.lowestAskJpy,
-      note: r.snkrdunk.listingCount ? `${r.snkrdunk.listingCount} listings` : undefined,
+      note: r.snkrdunk.listingCount ? `${r.snkrdunk.listingCount} Angebote` : undefined,
       url: r.snkrdunk.url,
     });
   if (r.mercari.ok && r.mercari.activeLowestJpy)
-    out.push({ source: 'mercari', label: 'Mercari', jpy: r.mercari.activeLowestJpy, note: 'lowest active listing', url: r.mercari.url });
+    out.push({ source: 'mercari', label: 'Mercari', jpy: r.mercari.activeLowestJpy, note: 'günstigstes Angebot', url: r.mercari.url });
   return out;
 }
 

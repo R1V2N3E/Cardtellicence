@@ -6,7 +6,7 @@ export function Header({ title, sub, right, back }: { title: string; sub?: React
   return (
     <header className="header">
       {back && (
-        <button className="icon-btn" onClick={() => history.back()} aria-label="Back">
+        <button className="icon-btn" onClick={() => history.back()} aria-label="Zurück">
           <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
       )}
@@ -44,7 +44,7 @@ export function Thumb({ id, image, fallback, alt, size = 'low' }: { id: string; 
   return <img className="thumb" src={sources[i]} alt={alt} loading="lazy" decoding="async" onError={() => setState({ key, i: i + 1 })} />;
 }
 
-export function Spinner({ label = 'Loading…' }: { label?: string }) {
+export function Spinner({ label = 'Lädt…' }: { label?: string }) {
   return (
     <div className="spinner-wrap">
       <div className="spinner" />

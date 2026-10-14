@@ -6,7 +6,7 @@ import { ago, fmtEur, fmtJpy, fmtSigned, marginClass } from '../format';
 import { opportunityMargin } from '../margin';
 import { useSettings, useWatchlist } from '../state';
 
-export function Watchlist() {
+export function Watchlist({ embedded = false }: { embedded?: boolean }) {
   const { list } = useWatchlist();
   const [settings] = useSettings();
   const [scan, setScan] = useState<{ file: OpportunityFile; byId: Map<string, Opportunity> } | null>(null);
@@ -19,8 +19,8 @@ export function Watchlist() {
 
   return (
     <>
-      <Header title="Watchlist" sub={`${list.length} cards · stored on this iPhone`} />
-      {!list.length && <p className="empty">Tap ☆ on any card to track it here.</p>}
+      {!embedded && <Header title="Merkliste" sub={`${list.length} Karten · auf diesem iPhone gespeichert`} />}
+      {!list.length && <p className="empty">Tippe auf ☆ bei einer Karte, um sie hier zu beobachten.</p>}
       <ul className="list">
         {list.map((w) => {
           // Prefer today's scan; fall back to the snapshot from the last time the card was opened.
@@ -29,7 +29,7 @@ export function Watchlist() {
           const buyJpy = m?.buy?.jpy ?? w.last?.buyJpy ?? null;
           const sell = m?.sellEur ?? w.last?.sellEur ?? null;
           const margin = m?.marginEur ?? w.last?.marginEur ?? null;
-          const when = o ? `scan ${ago(scan!.file.generatedAt)}` : w.last ? `viewed ${ago(w.last.at)}` : 'open to load prices';
+          const when = o ? `Scan ${ago(scan!.file.generatedAt)}` : w.last ? `angesehen ${ago(w.last.at)}` : 'öffnen für Preise';
           return (
             <li key={w.id}>
               <CardLink id={w.id} className="deal">

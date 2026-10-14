@@ -1,0 +1,313 @@
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { IdentifyResult } from '../../lib/identify';
+import type { CardSummary } from '../../lib/types';
+import { api, ApiError, type LivePrice } from '../api';
+import { AddSheet } from '../components/AddSheet';
+import { Logo } from '../components/Logo';
+import { Spinner, Thumb } from '../components/ui';
+import { fmtEur } from '../format';
+
+const CARD_RATIO = 88 / 63; // height / width of a trading card
+const MAX_EDGE = 1280;
+
+type Phase =
+  | { kind: 'camera' }
+  | { kind: 'working'; photo: string }
+  | { kind: 'result'; photo: string; result: IdentifyResult }
+  | { kind: 'manual'; photo: string | null; reason: string }
+  | { kind: 'error'; photo: string | null; message: string };
+
+/** Downscale a drawable to at most MAX_EDGE px and return a JPEG data URL. */
+function toJpeg(src: CanvasImageSource, sx: number, sy: number, sw: number, sh: number): string {
+  const scale = Math.min(1, MAX_EDGE / Math.max(sw, sh));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(sw * scale);
+  canvas.height = Math.round(sh * scale);
+  canvas.getContext('2d')!.drawImage(src, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.86);
+}
+
+export function Scan() {
+  const navigate = useNavigate();
+  const video = useRef<HTMLVideoElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [torch, setTorch] = useState<boolean | null>(null); // null = not supported
+  const [phase, setPhase] = useState<Phase>({ kind: 'camera' });
+  const [added, setAdded] = useState(0);
+
+  // Start the rear camera; stop it when leaving the page.
+  useEffect(() => {
+    let active: MediaStream | null = null;
+    let cancelled = false;
+    navigator.mediaDevices
+      ?.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false })
+      .then((s) => {
+        if (cancelled) return s.getTracks().forEach((t) => t.stop());
+        active = s;
+        setStream(s);
+        const caps = (s.getVideoTracks()[0]?.getCapabilities?.() ?? {}) as { torch?: boolean };
+        if (caps.torch) setTorch(false);
+      })
+      .catch((e: Error) =>
+        setCameraError(e.name === 'NotAllowedError' ? 'Kamerazugriff verweigert. In den iOS-Einstellungen erlauben oder ein Foto aus der Mediathek wählen.' : 'Kamera nicht verfügbar. Wähle ein Foto aus der Mediathek.'),
+      );
+    if (!navigator.mediaDevices) setCameraError('Kamera nicht verfügbar. Wähle ein Foto aus der Mediathek.');
+    return () => {
+      cancelled = true;
+      active?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (video.current && stream) {
+      video.current.srcObject = stream;
+      video.current.play().catch(() => {});
+    }
+  }, [stream, phase.kind]);
+
+  const toggleTorch = async () => {
+    const track = stream?.getVideoTracks()[0];
+    if (!track || torch === null) return;
+    await track.applyConstraints({ advanced: [{ torch: !torch } as MediaTrackConstraintSet] }).catch(() => {});
+    setTorch(!torch);
+  };
+
+  const identify = async (photo: string) => {
+    setPhase({ kind: 'working', photo });
+    try {
+      const result = await api.identify(photo);
+      if (!result.reading.is_pokemon_card) return setPhase({ kind: 'manual', photo, reason: 'Keine Pokémon-Karte erkannt.' });
+      if (!result.matches.length)
+        return setPhase({ kind: 'manual', photo, reason: `Gelesen: ${[result.reading.set_code, result.reading.number, result.reading.name].filter(Boolean).join(' · ') || 'nichts'} – keine passende Karte gefunden.` });
+      setPhase({ kind: 'result', photo, result });
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'not_configured')
+        return setPhase({ kind: 'manual', photo, reason: 'Automatische Erkennung ist noch nicht eingerichtet (ANTHROPIC_API_KEY in Vercel fehlt).' });
+      if (e instanceof ApiError && e.code === 'access_code')
+        return setPhase({ kind: 'error', photo, message: 'Zugangscode fehlt oder ist falsch. Bitte in den Einstellungen eintragen.' });
+      setPhase({ kind: 'error', photo, message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const capture = () => {
+    const v = video.current;
+    const f = frame.current;
+    if (!v || !f || !v.videoWidth) return;
+    // Map the on-screen frame (video uses object-fit: cover) to video pixels, with a little margin.
+    const box = v.getBoundingClientRect();
+    const fr = f.getBoundingClientRect();
+    const scale = Math.max(box.width / v.videoWidth, box.height / v.videoHeight);
+    const ox = (box.width - v.videoWidth * scale) / 2;
+    const oy = (box.height - v.videoHeight * scale) / 2;
+    const m = 0.06;
+    const sx = Math.max(0, (fr.left - box.left - ox) / scale - (fr.width / scale) * m);
+    const sy = Math.max(0, (fr.top - box.top - oy) / scale - (fr.height / scale) * m);
+    const sw = Math.min(v.videoWidth - sx, (fr.width / scale) * (1 + 2 * m));
+    const sh = Math.min(v.videoHeight - sy, (fr.height / scale) * (1 + 2 * m));
+    identify(toJpeg(v, sx, sy, sw, sh));
+  };
+
+  const fromLibrary = (file: File | undefined) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      identify(toJpeg(img, 0, 0, img.naturalWidth, img.naturalHeight));
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  };
+
+  return (
+    <div className="scan">
+      <header className="scan-top">
+        <button className="icon-btn ghost" onClick={() => navigate(-1)} aria-label="Zurück">
+          <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
+        <Logo />
+        <button className="icon-btn ghost" onClick={() => navigate('/search')} aria-label="Suchen">
+          <svg viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5" /></svg>
+        </button>
+      </header>
+
+      <div className="scan-stage">
+        {stream && <video ref={video} className="scan-video" playsInline muted autoPlay />}
+        {cameraError && <div className="scan-camera-error">{cameraError}</div>}
+        <div ref={frame} className="scan-frame" style={{ aspectRatio: `${1 / CARD_RATIO}` }}>
+          {torch !== null && (
+            <button className={`scan-torch ${torch ? 'on' : ''}`} onClick={toggleTorch} aria-label="Licht">
+              <svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z" /></svg>
+            </button>
+          )}
+        </div>
+        <div className="scan-hint">
+          {added > 0 ? <span className="pro">+{added}</span> : <span className="pro">Tipp</span>}
+          {added > 0 ? ` ${added === 1 ? 'Karte' : 'Karten'} hinzugefügt. Weiter scannen!` : ' Nummer unten links gut sichtbar halten.'}
+        </div>
+      </div>
+
+      <div className="scan-controls">
+        <p>Scanne die Vorderseite der Karte, um zu beginnen.</p>
+        <div className="scan-buttons">
+          <button className="round-btn" onClick={() => fileInput.current?.click()} aria-label="Foto aus Mediathek">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4" /><circle cx="15.5" cy="8.5" r="1.5" /></svg>
+          </button>
+          <button className="shutter" onClick={capture} disabled={!stream} aria-label="Foto aufnehmen" />
+          <button className="round-btn" onClick={() => navigate('/portfolio')} aria-label="Sammlung">
+            <svg viewBox="0 0 24 24"><path d="M7 4h11a1 1 0 0 1 1 1v13M4 7h11a1 1 0 0 1 1 1v12H5a1 1 0 0 1-1-1z" /></svg>
+          </button>
+        </div>
+        <input ref={fileInput} type="file" accept="image/*" hidden onChange={(e) => fromLibrary(e.target.files?.[0])} />
+      </div>
+
+      {phase.kind === 'working' && (
+        <div className="sheet-backdrop">
+          <div className="sheet center">
+            <img className="scan-photo" src={phase.photo} alt="Foto" />
+            <Spinner label="Karte wird erkannt…" />
+          </div>
+        </div>
+      )}
+      {phase.kind === 'result' && (
+        <ResultSheet
+          photo={phase.photo}
+          result={phase.result}
+          onClose={() => setPhase({ kind: 'camera' })}
+          onAdded={() => setAdded((n) => n + 1)}
+        />
+      )}
+      {(phase.kind === 'manual' || phase.kind === 'error') && (
+        <ManualSheet
+          photo={phase.photo}
+          reason={phase.kind === 'manual' ? phase.reason : phase.message}
+          onClose={() => setPhase({ kind: 'camera' })}
+          onAdded={() => setAdded((n) => n + 1)}
+        />
+      )}
+    </div>
+  );
+}
+
+function usePrice(id: string | undefined) {
+  const [price, setPrice] = useState<LivePrice | null>(null);
+  useEffect(() => {
+    setPrice(null);
+    if (id) api.prices([id]).then((r) => setPrice(r.prices[id] ?? null)).catch(() => {});
+  }, [id]);
+  return price;
+}
+
+function ResultSheet({ photo, result, onClose, onAdded }: { photo: string; result: IdentifyResult; onClose: () => void; onAdded: () => void }) {
+  const navigate = useNavigate();
+  const [pick, setPick] = useState(0);
+  const [adding, setAdding] = useState(false);
+  const card = result.matches[pick];
+  const price = usePrice(card?.id);
+  const r = result.reading;
+
+  if (adding) return <AddSheet card={card} priceEur={price?.trend} photo={photo} onClose={onClose} onAdded={onAdded} />;
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-grip" />
+        <div className="match-head">
+          <img className="match-photo" src={photo} alt="Dein Foto" />
+          <div className="match-arrow">→</div>
+          <Thumb id={card.id} image={card.image} alt={card.nameJa} size="high" />
+        </div>
+        <div className="match-info">
+          <div className="deal-name big">{card.nameEn ?? card.nameJa}</div>
+          <div className="deal-meta">
+            {card.nameEn && `${card.nameJa} · `}
+            {card.setId} {card.number} {card.rarity && `· ${card.rarity}`}
+          </div>
+          <div className="sheet-price">
+            {price ? fmtEur(price.trend) : '…'} <small>Cardmarket Trend</small>
+          </div>
+          <div className="hint">
+            Erkannt: {[r.set_code, r.number, r.rarity, r.name].filter(Boolean).join(' · ')}
+            {result.matchedBy !== 'set+number' && ' – bitte prüfen'}
+          </div>
+        </div>
+        {result.matches.length > 1 && (
+          <>
+            <div className="hint">Andere Treffer</div>
+            <div className="match-alts">
+              {result.matches.slice(0, 12).map((c, i) => (
+                <button key={c.id} className={i === pick ? 'alt on' : 'alt'} onClick={() => setPick(i)}>
+                  <Thumb id={c.id} image={c.image} alt={c.nameJa} />
+                  <span>{c.setId}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <button className="primary-btn" onClick={() => setAdding(true)}>
+          Zur Sammlung hinzufügen
+        </button>
+        <div className="sheet-actions">
+          <button className="link-btn" onClick={() => navigate(`/card/${encodeURIComponent(card.id)}`)}>
+            Details & Preise
+          </button>
+          <button className="link-btn" onClick={onClose}>
+            Neu scannen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Fallback when recognition is unavailable or found nothing: search by number or name. */
+function ManualSheet({ photo, reason, onClose, onAdded }: { photo: string | null; reason: string; onClose: () => void; onAdded: () => void }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<CardSummary[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [chosen, setChosen] = useState<CardSummary | null>(null);
+  const price = usePrice(chosen?.id);
+
+  const run = async () => {
+    if (!q.trim()) return;
+    setLoading(true);
+    setResults(await api.search(q).catch(() => []));
+    setLoading(false);
+  };
+
+  if (chosen) return <AddSheet card={chosen} priceEur={price?.trend} photo={photo} onClose={onClose} onAdded={onAdded} />;
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-grip" />
+        <div className="manual-head">
+          {photo && <img className="match-photo" src={photo} alt="Dein Foto" />}
+          <p className="hint">{reason} Gib die Nummer unten links auf der Karte ein (z. B. 116/80 oder M2 116) oder den Namen.</p>
+        </div>
+        <div className="cost-input">
+          <input className="input" autoFocus placeholder="116/80, SV2a 201, Glurak…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && run()} />
+          <button className="chip on" onClick={run}>
+            Suchen
+          </button>
+        </div>
+        {loading && <Spinner label="Suche…" />}
+        {results && !results.length && <p className="hint">Keine Karte gefunden.</p>}
+        <div className="match-alts wrap">
+          {results?.slice(0, 24).map((c) => (
+            <button key={c.id} className="alt" onClick={() => setChosen(c)}>
+              <Thumb id={c.id} image={c.image} alt={c.nameJa} />
+              <span>
+                {c.setId} {c.number}
+              </span>
+            </button>
+          ))}
+        </div>
+        <button className="link-btn" onClick={onClose}>
+          Neu scannen
+        </button>
+      </div>
+    </div>
+  );
+}

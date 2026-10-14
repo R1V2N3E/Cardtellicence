@@ -3,7 +3,9 @@ import { getFx } from './fx.js';
 import { findPriceCharting } from './pricecharting.js';
 import { buildReport } from './report.js';
 import { search } from './search.js';
-import { cached, getJson } from './http.js';
+import { cached, getJson, mapLimit } from './http.js';
+import { identifyConfigured, matchReading, readCard } from './identify.js';
+import { cardmarketFor } from './prices.js';
 import { findSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
 import { formatNumber, getCard, getRawCard, printedTotal } from './tcgdex.js';
 import type { OpportunityFile } from './types.js';
@@ -111,4 +113,37 @@ export async function imgHandler(req: Request) {
     status: 302,
     headers: { location: target, 'cache-control': 'public, max-age=86400, s-maxage=604800' },
   });
+}
+
+/** POST {image: dataURL} → what Claude read on the card + matching Japanese cards. */
+export async function identifyHandler(req: Request) {
+  if (!identifyConfigured()) return json({ error: 'not_configured' }, 0, 501);
+  // Optional shared secret so strangers can't spend the API budget.
+  const code = process.env.APP_ACCESS_CODE;
+  if (code && req.headers.get('x-access-code') !== code) return json({ error: 'access_code' }, 0, 401);
+  try {
+    const body = (await req.json()) as { image?: string };
+    const m = body.image?.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+    if (!m) return fail('image must be a base64 data URL', 400);
+    if (m[2].length > 6_000_000) return fail('image too large', 413);
+    const reading = await readCard(m[2], m[1] as 'image/jpeg');
+    return json(await matchReading(reading), 0);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** GET ?ids=SV2a-201,M2-110 → current Cardmarket prices (official price guide) per card. */
+export async function pricesHandler(req: Request) {
+  const ids = (new URL(req.url).searchParams.get('ids') ?? '').split(',').filter((id) => CARD_ID.test(id)).slice(0, 150);
+  try {
+    const entries = await mapLimit(ids, 8, async (id) => {
+      const raw = await getRawCard(id).catch(() => null);
+      const cm = raw ? await cardmarketFor(raw).catch(() => null) : null;
+      return [id, cm && { trend: cm.trend, avg1: cm.avg1, avg7: cm.avg7, avg30: cm.avg30, low: cm.low, updated: cm.updated }] as const;
+    });
+    return json({ prices: Object.fromEntries(entries), fetchedAt: new Date().toISOString() }, 600);
+  } catch (e) {
+    return fail(e);
+  }
 }

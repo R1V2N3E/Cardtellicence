@@ -6,7 +6,9 @@ find Japanese cards that are cheap in Japan and sell for more on Cardmarket.
 - **Deals**: daily scan of ~40 Japanese sets, ranked by margin € or ROI %.
 - **Search**: English, German or Japanese names (`Charizard`, `Glurak`, `リザードン`), set + number (`SV2a 201`) or a whole set (`M2a`).
 - **Card page**: photos, live prices from every source, margin calculator, sold-price charts (raw and PSA 10), last sales list, graded prices, links to each shop.
-- **Watchlist** and **Settings** are stored on the device.
+- **Scan**: photograph a card; Claude reads set code, number and name and the app matches the exact Japanese card. Add it to your collection with quantity, condition and purchase price.
+- **Portfolio**: live value of your collection at Cardmarket prices, 7-day change, value chart, profit vs. purchase price, per-set view, JSON backup/restore.
+- **Watchlist** and **Settings**; collection, watchlist and settings are stored on the device.
 
 ## Data sources
 
@@ -38,7 +40,9 @@ Margin = Cardmarket price − Japanese price × ECB rate. Fees, shipping and imp
 2. **Daily scan**: GitHub → repository → *Settings → Actions → General* → *Workflow permissions* → **Read and write permissions** → Save.
    The `Daily price scan` workflow then runs every day at 03:17 UTC, commits `public/data/`, and Vercel redeploys automatically.
    To refresh deals right away: *Actions → Daily price scan → Run workflow* (optionally with a set list like `SV2a,M2a`).
-3. **iPhone**: open your Vercel URL in **Safari** → **Share** → **Add to Home Screen**. It then opens full screen with its own icon.
+3. **Card scanning** (optional, ~1 cent per scan): create an API key at [console.anthropic.com](https://console.anthropic.com) → in Vercel *Project → Settings → Environment Variables* add `ANTHROPIC_API_KEY`, and optionally `APP_ACCESS_CODE` (any password; enter the same in the app under Einstellungen so strangers can't scan on your bill) → *Redeploy*.
+   Without a key the scanner still works: it asks you to type the number printed on the card (e.g. `116/80`).
+4. **iPhone**: open your Vercel URL in **Safari** → **Share** → **Add to Home Screen**. It then opens full screen with its own icon.
 
 ## Develop
 

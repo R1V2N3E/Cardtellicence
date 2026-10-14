@@ -1,5 +1,22 @@
 import { useEffect, useState } from 'react';
+import type { IdentifyResult } from '../lib/identify';
 import type { CardReport, CardSummary, ChartPoint, HistoryFile, OpportunityFile } from '../lib/types';
+import { readAccessCode } from './state';
+
+export interface LivePrice {
+  trend: number | null;
+  avg1: number | null;
+  avg7: number | null;
+  avg30: number | null;
+  low: number | null;
+  updated: string | null;
+}
+
+export class ApiError extends Error {
+  constructor(public code: string, message: string) {
+    super(message);
+  }
+}
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -17,6 +34,18 @@ export const api = {
     getJson<{ points: ChartPoint[] }>(`/api/chart?source=snkrdunk&id=${id}&cond=${cond}&range=${range}`).then((r) => r.points),
   pcChart: (card: string) => getJson<{ ungraded: ChartPoint[]; psa10: ChartPoint[] }>(`/api/chart?source=pricecharting&card=${encodeURIComponent(card)}`),
   opportunities: () => getJson<OpportunityFile>('/data/opportunities.json'),
+  prices: (ids: string[]) =>
+    getJson<{ prices: Record<string, LivePrice | null>; fetchedAt: string }>(`/api/prices?ids=${ids.map(encodeURIComponent).join(',')}`),
+  identify: async (image: string): Promise<IdentifyResult> => {
+    const res = await fetch('/api/identify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-access-code': readAccessCode() },
+      body: JSON.stringify({ image }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(body.error ?? `http_${res.status}`, body.error ?? `HTTP ${res.status}`);
+    return body;
+  },
   history: (setId: string) => getJson<HistoryFile>(`/data/history/${encodeURIComponent(setId)}.json`).catch(() => ({}) as HistoryFile),
 };
 

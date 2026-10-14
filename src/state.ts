@@ -80,3 +80,74 @@ export function useWatchlist() {
   };
   return { list, has, toggle, update };
 }
+
+// ---- Collection (portfolio) ----
+
+export type Condition = 'NM' | 'LP' | 'MP' | 'HP' | 'PSA10' | 'PSA9';
+export const CONDITIONS: [Condition, string][] = [
+  ['NM', 'Near Mint (NM)'],
+  ['LP', 'Light Played (LP)'],
+  ['MP', 'Moderately Played (MP)'],
+  ['HP', 'Heavily Played (HP)'],
+  ['PSA10', 'PSA 10'],
+  ['PSA9', 'PSA 9'],
+];
+
+export interface CollectionItem {
+  uid: string;
+  cardId: string;
+  nameJa: string;
+  nameEn: string | null;
+  setId: string;
+  setName: string;
+  number: string;
+  rarity: string | null;
+  image: string | null;
+  qty: number;
+  condition: Condition;
+  /** What was paid per copy, in the currency it was paid in. */
+  cost?: { amount: number; currency: 'JPY' | 'EUR' } | null;
+  addedAt: string;
+}
+
+export function useCollection() {
+  const [items, setItems] = useStored<CollectionItem[]>('ct-collection', () => readList<CollectionItem>('ct-collection'));
+  const add = (item: Omit<CollectionItem, 'uid' | 'addedAt'>) => {
+    const cur = readList<CollectionItem>('ct-collection');
+    // Same card, condition and cost → just raise the quantity.
+    const same = cur.find(
+      (c) => c.cardId === item.cardId && c.condition === item.condition && JSON.stringify(c.cost ?? null) === JSON.stringify(item.cost ?? null),
+    );
+    if (same) return setItems(cur.map((c) => (c === same ? { ...c, qty: c.qty + item.qty } : c)));
+    setItems([{ ...item, uid: crypto.randomUUID(), addedAt: new Date().toISOString() }, ...cur]);
+  };
+  const update = (uid: string, patch: Partial<CollectionItem>) =>
+    setItems(readList<CollectionItem>('ct-collection').map((c) => (c.uid === uid ? { ...c, ...patch } : c)));
+  const remove = (uid: string) => setItems(readList<CollectionItem>('ct-collection').filter((c) => c.uid !== uid));
+  const replaceAll = (next: CollectionItem[]) => setItems(next);
+  return { items, add, update, remove, replaceAll };
+}
+
+/** Daily portfolio totals for the change figure and the value chart: [yyyy-mm-dd, EUR]. */
+export function recordPortfolioValue(value: number) {
+  const today = new Date().toISOString().slice(0, 10);
+  const hist = readList<[string, number]>('ct-portfolio-history').filter(([d]) => d !== today);
+  hist.push([today, Math.round(value * 100) / 100]);
+  write('ct-portfolio-history', hist.slice(-730));
+}
+export const readPortfolioHistory = () => readList<[string, number]>('ct-portfolio-history');
+
+export function readAccessCode(): string {
+  try {
+    return localStorage.getItem('ct-access-code') ?? '';
+  } catch {
+    return '';
+  }
+}
+export function writeAccessCode(code: string) {
+  try {
+    localStorage.setItem('ct-access-code', code);
+  } catch {
+    /* ignore */
+  }
+}
