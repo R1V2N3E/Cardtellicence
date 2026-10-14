@@ -29,9 +29,13 @@ export function Deals() {
     if (!refresh || busy || lastRefresh.current === refresh) return;
     lastRefresh.current = refresh;
     setToast(error ? `Aktualisierung fehlgeschlagen: ${error}` : `Aktualisiert ✓ · Preise vom Scan ${ago(data?.generatedAt)} · Kurs EZB ${fx?.date ?? ''}`);
+  }, [refresh, busy]);
+  // The toast closes itself; its own effect so later re-renders can't cancel the timer.
+  useEffect(() => {
+    if (!toast) return;
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
-  }, [refresh, busy]);
+  }, [toast]);
   const [sort, setSort] = useState<Sort>('margin');
   const [setFilter, setSetFilter] = useState('all');
   const [text, setText] = useState('');
@@ -67,7 +71,11 @@ export function Deals() {
           </button>
         }
       />
-      {toast && <div className="toast">{toast}</div>}
+      {toast && (
+        <div className="toast" role="status" onClick={() => setToast(null)}>
+          {toast}
+        </div>
+      )}
       <div className="toolbar">
         <input className="input" placeholder="Name, Set oder Nummer (116/80)…" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="row-scroll">

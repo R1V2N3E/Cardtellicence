@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type LivePrice } from '../api';
 import { AppBar } from '../components/AppBar';
-import { PriceChart } from '../components/PriceChart';
+import { PortfolioChart } from '../components/PortfolioChart';
 import { CardLink, Chips, Thumb } from '../components/ui';
 import { ago, fmtEur, fmtJpy, fmtSigned, marginClass } from '../format';
 import { CONDITIONS, readPortfolioHistory, recordPortfolioValue, useCollection, type CollectionItem, type Condition } from '../state';
@@ -14,6 +14,7 @@ const REFRESH_MS = 5 * 60_000;
 
 // Cardmarket's price guide describes near-mint raw copies; played copies sell for less.
 const CONDITION_FACTOR: Record<Condition, number> = { NM: 1, LP: 0.85, MP: 0.7, HP: 0.5, PSA10: 1, PSA9: 1 };
+const valueFactor = (i: CollectionItem) => CONDITION_FACTOR[i.condition];
 const conditionLabel = (c: Condition) => CONDITIONS.find(([v]) => v === c)?.[1] ?? c;
 
 export function Portfolio() {
@@ -95,13 +96,17 @@ export function Portfolio() {
   useEffect(() => {
     if (complete) recordPortfolioValue(totals.value);
   }, [complete, totals.value]);
-  const history = readPortfolioHistory();
+  const history = useMemo(() => readPortfolioHistory(), [complete, totals.value]);
   const change = useMemo(() => {
-    if (history.length < 2) return null;
+    if (history.length < 2) {
+      // No recorded week yet: compare with Cardmarket's 7-day averages.
+      const avg7 = items.reduce((n, i) => n + (prices[i.cardId]?.avg7 ?? prices[i.cardId]?.trend ?? 0) * CONDITION_FACTOR[i.condition] * i.qty, 0);
+      return avg7 > 0 ? { delta: totals.value - avg7, since: '', week: true } : null;
+    }
     const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
     const base = [...history].reverse().find(([d]) => d <= weekAgo) ?? history[0];
     return { delta: totals.value - base[1], since: base[0], week: base[0] <= weekAgo };
-  }, [history.length, totals.value]);
+  }, [history.length, totals.value, prices, items]);
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -190,7 +195,7 @@ export function Portfolio() {
               <div className="pf-value">{items.length ? fmtEur(totals.value) : fmtEur(0)}</div>
               {change && (
                 <div className={`pf-change ${change.delta >= 0 ? 'up' : 'down'}`}>
-                  {fmtSigned(change.delta)} {change.week ? 'in den letzten 7 Tagen' : `seit ${new Date(change.since).toLocaleDateString('de-DE')}`}
+                  {fmtSigned(change.delta)} {!change.since ? 'ggü. 7-Tage-Durchschnitt' : change.week ? 'in den letzten 7 Tagen' : `seit ${new Date(change.since).toLocaleDateString('de-DE')}`}
                 </div>
               )}
               {totals.costed > 0 && (
@@ -221,9 +226,7 @@ export function Portfolio() {
             </div>
           </div>
 
-          {history.length >= 2 && (
-            <PriceChart height={150} series={[{ label: 'Portfoliowert', color: '#3b82f6', points: history.map(([d, v]) => ({ t: Date.parse(d), v })) }]} />
-          )}
+          <PortfolioChart items={items} prices={prices} factor={valueFactor} snapshots={history} />
 
           {!items.length && (
             <div className="empty-state">

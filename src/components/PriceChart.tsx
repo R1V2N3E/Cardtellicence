@@ -11,6 +11,7 @@ import {
   Tooltip,
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
+import { de } from 'date-fns/locale';
 import { useEffect, useRef } from 'react';
 import type { ChartPoint } from '../../lib/types';
 import { fmtEur } from '../format';
@@ -60,7 +61,7 @@ export function PriceChart({ series, height = 220 }: { series: Series[]; height?
         animation: false,
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
         scales: {
-          x: { type: 'time', time: { tooltipFormat: 'dd.MM.yyyy' }, grid: { color: grid }, ticks: { color: muted, maxTicksLimit: 5 } },
+          x: { type: 'time', adapters: { date: { locale: de } }, time: { tooltipFormat: 'dd.MM.yyyy', displayFormats: { day: 'd. MMM', week: 'd. MMM', month: 'MMM yy' } }, grid: { color: grid }, ticks: { color: muted, maxTicksLimit: 5 } },
           y: { grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtEur(Number(v)), maxTicksLimit: 6 } },
         },
         plugins: {
