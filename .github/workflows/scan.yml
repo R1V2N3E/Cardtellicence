@@ -1,0 +1,42 @@
+name: Daily price scan
+
+on:
+  schedule:
+    # 03:17 UTC daily — after Cardmarket publishes its price guide (~02:00 CET).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      sets:
+        description: 'Comma-separated TCGdex set ids (empty = default list)'
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Scan Japanese sets
+        run: npm run scan
+        env:
+          SCAN_SETS: ${{ inputs.sets }}
+      - name: Commit data
+        run: |
+          git config user.name "cardtellicence-bot"
+          git config user.email "cardtellicence-bot@users.noreply.github.com"
+          git add public/data
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "data: daily scan $(date -u +%Y-%m-%d)"
+          git push
