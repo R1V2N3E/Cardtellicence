@@ -104,3 +104,22 @@ describe('printed totals', () => {
     expect(formatNumber('201', printedTotal('SV2a', 165))).toBe('201/165');
   });
 });
+
+describe('scan helpers', () => {
+  it('normalises printed names', async () => {
+    const { normName } = await import('./identify');
+    expect(normName('リザードン ＥＸ')).toBe(normName('リザードンex'));
+    expect(normName('ミライドンex')).not.toBe(normName('タッツー'));
+  });
+  it('parses SNKRDUNK labels of deck products', async () => {
+    const { parseSnkLabel } = await import('./external');
+    expect(parseSnkLabel('ミライドンex [SVHM 011/053](スターターデッキ&amp;ビルドセット「未来のミライドンex」)')).toEqual({
+      nameJa: 'ミライドンex',
+      rarity: null,
+      setId: 'SVHM',
+      number: '011/053',
+      setName: '未来のミライドンex',
+    });
+    expect(parseSnkLabel('リザードンex SAR [SV2a 201/165](強化拡張パック「ポケモンカード151」)')?.rarity).toBe('SAR');
+  });
+});

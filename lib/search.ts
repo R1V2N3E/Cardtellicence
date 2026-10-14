@@ -14,7 +14,7 @@ const NUMBER_ONLY = /^#?(\d{1,3})$/;
 const MODERN_SET = /^(SV|M)\d/;
 
 /** Fetch card <n> from each set, trying the zero-padded and plain local ids. */
-async function cardsByNumber(setIds: string[], n: string): Promise<CardSummary[]> {
+export async function cardsByNumber(setIds: string[], n: string): Promise<CardSummary[]> {
   const found = await mapLimit(setIds, 8, async (setId) => {
     for (const localId of [n.padStart(3, '0'), String(Number(n))]) {
       const raw = await getRawCard(`${setId}-${localId}`).catch(() => null);
@@ -33,7 +33,7 @@ function briefToSummary(b: Brief, nameEn: string | null, setName = ''): CardSumm
 }
 
 /** Case-insensitive match of a user-typed set code to a TCGdex set id ("sv2a" -> "SV2a"). */
-async function resolveSetId(code: string): Promise<string | null> {
+export async function resolveSetId(code: string): Promise<string | null> {
   const sets = await listSets();
   return sets.find((s) => s.id.toLowerCase() === code.toLowerCase())?.id ?? null;
 }

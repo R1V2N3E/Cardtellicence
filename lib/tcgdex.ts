@@ -17,13 +17,14 @@ interface RawSet extends RawSetBrief {
   releaseDate?: string;
   cards: { id: string; localId: string; name: string; image?: string }[];
 }
-interface RawCard {
+export interface RawCard {
   id: string;
   localId: string;
   name: string;
   image?: string;
   rarity?: string;
   illustrator?: string;
+  hp?: number;
   dexId?: number[];
   set: { id: string; name: string; cardCount: { official: number; total: number } };
   variants_detailed?: {

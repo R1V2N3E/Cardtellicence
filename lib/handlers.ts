@@ -5,8 +5,10 @@ import { buildReport } from './report.js';
 import { search } from './search.js';
 import { cached, getJson, mapLimit } from './http.js';
 import { identifyConfigured, matchReading, readCard } from './identify.js';
+import { searchMercari } from './mercari.js';
+import { externalSnkId, getExternalCard, isExternalId } from './external.js';
 import { cardmarketFor } from './prices.js';
-import { findSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
+import { findSnkrdunk, getSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
 import { formatNumber, getCard, getRawCard, printedTotal } from './tcgdex.js';
 import type { OpportunityFile } from './types.js';
 
@@ -94,6 +96,11 @@ export async function imgHandler(req: Request) {
   const resolve = () =>
     // Misses throw so they aren't cached; the CDN still caches the 404 for an hour.
     cached(`img:${id}:${size}`, 24 * 3600_000, async (): Promise<string> => {
+      if (isExternalId(id)) {
+        const ext = await getExternalCard(id);
+        if (!ext.externalImage) throw new Error('no image');
+        return ext.externalImage;
+      }
       const raw = await getRawCard(id).catch(() => null);
       if (raw?.image) return `${raw.image}/${size === 'high' ? 'high' : 'low'}.webp`;
       const scan = await cached('scan-file', 10 * 60_000, () => getJson<OpportunityFile>(`${url.origin}/data/opportunities.json`)).catch(() => null);
@@ -127,7 +134,7 @@ export async function identifyHandler(req: Request) {
     if (!m) return fail('image must be a base64 data URL', 400);
     if (m[2].length > 6_000_000) return fail('image too large', 413);
     const reading = await readCard(m[2], m[1] as 'image/jpeg');
-    return json(await matchReading(reading), 0);
+    return json(await matchReading(reading, { data: m[2], media: m[1] as 'image/jpeg' }), 0);
   } catch (e) {
     return fail(e);
   }
@@ -137,10 +144,24 @@ export async function identifyHandler(req: Request) {
 export async function pricesHandler(req: Request) {
   const ids = (new URL(req.url).searchParams.get('ids') ?? '').split(',').filter((id) => CARD_ID.test(id)).slice(0, 150);
   try {
+    const fx = await getFx().catch(() => null);
     const entries = await mapLimit(ids, 8, async (id) => {
+      if (isExternalId(id)) {
+        // No Cardmarket product: value at SNKRDUNK's recent sold price (else lowest ask), in EUR.
+        const snk = await getSnkrdunk(externalSnkId(id)).catch(() => null);
+        let jpy = snk?.rawMedianJpy ?? snk?.lowestAskJpy ?? null;
+        if (jpy == null) {
+          // Cheap deck cards often have no SNKRDUNK market: use Mercari's recent sold median.
+          const card = await getExternalCard(id).catch(() => null);
+          const merc = card ? await searchMercari(`${card.nameJa} ${card.number}`, [card.number.split('/')[0]]).catch(() => null) : null;
+          jpy = merc?.soldMedianJpy ?? null;
+        }
+        const eur = jpy != null && fx ? Math.round(jpy * fx.jpyToEur * 100) / 100 : null;
+        return [id, eur != null ? { trend: eur, avg1: null, avg7: null, avg30: null, low: null, updated: null, source: 'japan' } : null] as const;
+      }
       const raw = await getRawCard(id).catch(() => null);
       const cm = raw ? await cardmarketFor(raw).catch(() => null) : null;
-      return [id, cm && { trend: cm.trend, avg1: cm.avg1, avg7: cm.avg7, avg30: cm.avg30, low: cm.low, updated: cm.updated }] as const;
+      return [id, cm && { trend: cm.trend, avg1: cm.avg1, avg7: cm.avg7, avg30: cm.avg30, low: cm.low, updated: cm.updated, source: 'cardmarket' }] as const;
     });
     return json({ prices: Object.fromEntries(entries), fetchedAt: new Date().toISOString() }, 600);
   } catch (e) {

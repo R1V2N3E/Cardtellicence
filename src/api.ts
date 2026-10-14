@@ -10,6 +10,7 @@ export interface LivePrice {
   avg30: number | null;
   low: number | null;
   updated: string | null;
+  source?: 'cardmarket' | 'japan';
 }
 
 export class ApiError extends Error {

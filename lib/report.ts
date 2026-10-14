@@ -6,7 +6,9 @@ import { cardmarketFor } from './prices.js';
 import { cardmarketUrl, getCard } from './tcgdex.js';
 import { cached, getJson } from './http.js';
 import { findYuyutei, yuyuteiSearchUrl } from './yuyutei.js';
-import type { CardReport, OpportunityFile, SourceResult, YuyuteiPrice } from './types.js';
+import { externalSnkId, getExternalCard, isExternalId } from './external.js';
+import { englishName } from './pokedex.js';
+import type { CardDetail, CardReport, OpportunityFile, SourceResult, YuyuteiPrice } from './types.js';
 
 /**
  * Yuyu-tei blocks some cloud IP ranges (including Vercel's). The daily scan runs elsewhere,
@@ -37,6 +39,7 @@ async function settle<T extends object>(p: Promise<T | null>, notFound: string, 
 }
 
 export async function buildReport(id: string, origin?: string): Promise<CardReport> {
+  if (isExternalId(id)) return buildExternalReport(id);
   const [{ raw, detail }, fx] = await Promise.all([getCard(id), getFx()]);
   const cardmarket = await cardmarketFor(raw).catch(() => null);
   const { setId, number, nameJa, nameEn, localId } = detail;
@@ -89,6 +92,42 @@ export async function buildReport(id: string, origin?: string): Promise<CardRepo
     snkrdunk,
     mercari,
     pricecharting,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+/** Report for a card TCGdex doesn't list (deck/build-set products), based on SNKRDUNK. */
+async function buildExternalReport(id: string): Promise<CardReport> {
+  const [card, fx] = await Promise.all([getExternalCard(id), getFx()]);
+  const nameEn = englishName(card.nameJa, []);
+  const detail: CardDetail = { ...card, nameEn, illustrator: null, releaseDate: null, dexId: [] };
+  const jpQuery = `${card.nameJa} ${card.number}`;
+  const cmSearch = `https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${encodeURIComponent(nameEn ?? card.nameJa)}&language=7`;
+  const links: Record<string, string> = {
+    Cardmarket: cmSearch,
+    SNKRDUNK: `https://snkrdunk.com/apparels/${externalSnkId(id)}`,
+    'Yuyu-tei': yuyuteiSearchUrl(card.nameJa),
+    'Mercari (sold)': mercariSearchUrl(jpQuery),
+    'Card Rush': `https://www.cardrush-pokemon.jp/product-list?keyword=${encodeURIComponent(jpQuery)}`,
+  };
+  const [snkrdunk, mercari, yuyutei] = await Promise.all([
+    settle(getSnkrdunk(externalSnkId(id)), 'Nicht auf SNKRDUNK gefunden', links.SNKRDUNK),
+    settle(searchMercari(jpQuery, [card.number.split('/')[0]]), 'Keine Mercari-Angebote', links['Mercari (sold)']),
+    settle(
+      findYuyutei(card.setId, card.number).then((r) => r && { url: r.url, priceJpy: r.priceJpy, stock: r.stock, image: r.image.replace('/100_140/', '/front/') }),
+      'Nicht bei Yuyu-tei gelistet',
+      links['Yuyu-tei'],
+    ),
+  ]);
+  return {
+    card: detail,
+    fx,
+    links,
+    cardmarket: { ok: false, error: 'Für dieses Produkt gibt es keine Cardmarket-Zuordnung – bitte manuell suchen', url: cmSearch },
+    yuyutei,
+    snkrdunk,
+    mercari,
+    pricecharting: { ok: false, error: 'Nicht verfügbar für dieses Produkt' },
     fetchedAt: new Date().toISOString(),
   };
 }

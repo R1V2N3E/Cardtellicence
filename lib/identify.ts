@@ -1,28 +1,45 @@
-// Card recognition from a photo: Claude reads what is printed on the card (set code,
-// collector number, name), then we resolve that to TCGdex card ids ourselves.
+// Card recognition from a photo, built so that a wrong card is never presented as certain:
+//   1. Claude reads what is printed on the card (set code, number, name, HP, illustrator).
+//   2. Candidates are collected from TCGdex (set+number, number/total, name) and, for products
+//      TCGdex doesn't list (starter decks etc.), from SNKRDUNK.
+//   3. Every candidate is scored against all printed facts; the name must match.
+//   4. Claude compares the photo with the best candidates' images and confirms or rejects.
+//   5. The result carries a confidence level; the app only preselects on "high".
 import Anthropic from '@anthropic-ai/sdk';
-import { search } from './search.js';
+import { externalSummary } from './external.js';
+import { mapLimit, request } from './http.js';
+import { cardsByNumber, resolveSetId } from './search.js';
+import { findSnkrdunk, searchSnkrdunk } from './snkrdunk.js';
+import { formatNumber, getRawCard, listSets, printedTotal, searchCards, toSummary, type RawCard } from './tcgdex.js';
 import type { CardSummary } from './types.js';
 
 export interface CardReading {
   is_pokemon_card: boolean;
   language: 'ja' | 'en' | 'other';
-  set_code: string | null; // printed bottom-left, e.g. "SV2a", "M2", "S12a"
+  set_code: string | null; // printed bottom-left, e.g. "SV2a", "M2", "svHM"
   number: string | null; // printed collector number, e.g. "201/165"
   name: string | null; // card name as printed (Japanese for Japanese cards)
-  rarity: string | null; // printed rarity code, e.g. "SAR", "SR", "AR"
+  rarity: string | null; // printed rarity code, e.g. "SAR"
+  hp: number | null;
+  illustrator: string | null;
 }
+
+export type Confidence = 'high' | 'medium' | 'low';
 
 export interface IdentifyResult {
   reading: CardReading;
-  matches: CardSummary[];
+  matches: CardSummary[]; // best first; only cards whose name matches the photo
+  confidence: Confidence;
+  note: string | null; // human-readable explanation when not certain (German, shown in the app)
+  checks: { name: boolean; number: boolean; set: boolean; hp: boolean | null; visual: boolean | null } | null;
+  // kept for older clients
   matchedBy: 'set+number' | 'number' | 'name' | 'none';
 }
 
-const SCHEMA = {
+const READ_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['is_pokemon_card', 'language', 'set_code', 'number', 'name', 'rarity'],
+  required: ['is_pokemon_card', 'language', 'set_code', 'number', 'name', 'rarity', 'hp', 'illustrator'],
   properties: {
     is_pokemon_card: { type: 'boolean' },
     language: { type: 'string', enum: ['ja', 'en', 'other'] },
@@ -30,71 +47,259 @@ const SCHEMA = {
     number: { type: ['string', 'null'] },
     name: { type: ['string', 'null'] },
     rarity: { type: ['string', 'null'] },
+    hp: { type: ['integer', 'null'] },
+    illustrator: { type: ['string', 'null'] },
   },
 } as const;
 
-const PROMPT = `This photo shows a Pokémon trading card, usually a Japanese one. Read what is printed on it.
+const READ_PROMPT = `This photo shows a Pokémon trading card, usually a Japanese one, possibly in a sleeve. Transcribe what is printed on it. Accuracy matters more than completeness: use null for anything you cannot read with certainty, never guess.
 
-- set_code: the expansion code printed in the bottom-left corner next to the regulation mark, e.g. "SV2a", "SV8a", "M2", "M2a", "S12a", "SM12a". Copy its capitalisation exactly. null if not legible.
-- number: the collector number printed next to it, e.g. "201/165" or "116/080". Keep leading zeros. null if not legible.
-- name: the card name exactly as printed at the top (Japanese for Japanese cards), including suffixes like "ex", "V", "VSTAR", "GX".
-- rarity: the rarity code printed after the number (C, U, R, RR, AR, SR, SAR, UR, MUR, ...), or null.
-- language: the card's print language.
-Report only what you can read; use null rather than guessing.`;
+- set_code: the small expansion code in the bottom-left corner, right of the regulation mark letter (e.g. "G", "H", "I", "J"). Examples: "SV2a", "sv4a", "M2", "M2a", "S12a", "SM12a", "svHM". Copy letters and capitalisation exactly as printed; do not include the regulation mark.
+- number: the collector number next to it, e.g. "201/165", "011/053", "116/080". Keep leading zeros; include the part after the slash.
+- name: the card name at the top, exactly as printed (Japanese for Japanese cards), including suffixes such as "ex", "V", "VMAX", "VSTAR", "GX". Do not include the evolution stage or HP.
+- rarity: the rarity code printed after the number (C, U, R, RR, RRR, AR, SR, SAR, UR, HR, MUR, ACE, ...), or null.
+- hp: the HP number at the top right for Pokémon cards, else null.
+- illustrator: the name after "Illus." at the bottom left, else null.
+- language: the card's print language.`;
+
+const VERIFY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['match', 'confidence'],
+  properties: {
+    match: { type: ['integer', 'null'] },
+    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+  },
+} as const;
+
+const VERIFY_PROMPT = (n: number) => `Image 1 is a photo of a Pokémon card. Images 2 to ${n + 1} are reference images of candidate cards, numbered 1 to ${n}.
+Which candidate is the same card as in the photo? It must be the same printing: same artwork (full-art vs. regular frame), same name, same collector number and set code if legible. Lighting, sleeves and glare in the photo don't matter.
+Answer "match" with the candidate number (1-${n}), or null if none of them is the same printing. Use confidence "high" only if artwork and printed details clearly agree.`;
 
 let client: Anthropic | null = null;
 
 export const identifyConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY);
 
-export async function readCard(imageBase64: string, mediaType: 'image/jpeg' | 'image/png' | 'image/webp'): Promise<CardReading> {
+function anthropic(): Anthropic {
   // Organization-level API keys (not scoped to a workspace) must name the workspace per request.
   const workspace = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
   client ??= new Anthropic(workspace ? { defaultHeaders: { 'anthropic-workspace-id': workspace } } : {});
-  const response = await client.beta.messages.create({
+  return client;
+}
+
+type ImageMedia = 'image/jpeg' | 'image/png' | 'image/webp';
+
+async function structured<T>(content: Anthropic.Beta.BetaContentBlockParam[], schema: object): Promise<T> {
+  const response = await anthropic().beta.messages.create({
     model: 'claude-opus-5-5',
-    max_tokens: 2000,
+    max_tokens: 4000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA as unknown as Record<string, unknown> } },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
-          { type: 'text', text: PROMPT },
-        ],
-      },
-    ],
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: schema as Record<string, unknown> } },
+    messages: [{ role: 'user', content }],
   });
-  if (response.stop_reason === 'refusal') throw new Error('Recognition was declined for this image');
+  if (response.stop_reason === 'refusal') throw new Error('Die Erkennung wurde für dieses Bild abgelehnt');
   const text = response.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')?.text;
-  if (!text) throw new Error('No recognition result');
-  return JSON.parse(text) as CardReading;
+  if (!text) throw new Error('Keine Antwort der Erkennung');
+  return JSON.parse(text) as T;
 }
 
-const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+export function readCard(imageBase64: string, mediaType: ImageMedia): Promise<CardReading> {
+  return structured<CardReading>(
+    [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+      { type: 'text', text: READ_PROMPT },
+    ],
+    READ_SCHEMA,
+  );
+}
 
-/** Resolve a reading to Japanese card ids: exact set + number, then number/total, then name. */
-export async function matchReading(r: CardReading): Promise<IdentifyResult> {
-  const num = r.number?.replace(/\s/g, '').match(/^(\d{1,3})(?:\/(\d{1,3}))?/);
-  const byName = (cards: CardSummary[]) =>
-    r.name ? [...cards].sort((a, b) => Number(norm(b.nameJa) === norm(r.name!)) - Number(norm(a.nameJa) === norm(r.name!))) : cards;
+// ---------- candidate matching ----------
 
-  if (r.set_code && num) {
-    const hits = await search(`${r.set_code} ${num[1]}`).catch(() => []);
-    if (hits.length) return { reading: r, matches: hits, matchedBy: 'set+number' };
-  }
-  if (num?.[2]) {
-    const hits = await search(`${num[1]}/${num[2]}`).catch(() => []);
-    if (hits.length) {
-      // Several sets share a total; the printed name decides.
-      const named = r.name ? hits.filter((c) => norm(c.nameJa) === norm(r.name!)) : [];
-      return { reading: r, matches: named.length ? [...named, ...hits.filter((c) => !named.includes(c))] : hits, matchedBy: 'number' };
+/** Normalise names: full-width → ASCII, no spaces, case-insensitive ("リザードン ＥＸ" = "リザードンex"). */
+export const normName = (s: string) => s.normalize('NFKC').replace(/[\s・･]/g, '').toLowerCase();
+
+interface Candidate {
+  summary: CardSummary;
+  hp: number | null;
+  illustrator: string | null;
+  image: string | null; // full URL for the visual check
+}
+
+const fromRaw = (raw: RawCard): Candidate => {
+  const summary = toSummary(raw);
+  return { summary, hp: raw.hp ?? null, illustrator: raw.illustrator ?? null, image: raw.image ? `${raw.image}/high.webp` : null };
+};
+
+function parseNumber(n: string | null) {
+  const m = n?.normalize('NFKC').replace(/\s/g, '').match(/^(\d{1,3})(?:\/(\d{1,3}))?/);
+  return m ? { n: Number(m[1]), total: m[2] ? Number(m[2]) : null, raw: m[0] } : null;
+}
+
+async function collectCandidates(r: CardReading): Promise<Candidate[]> {
+  const num = parseNumber(r.number);
+  const out = new Map<string, Candidate>();
+  const addRaw = (raw: RawCard | null) => raw && !out.has(raw.id) && out.set(raw.id, fromRaw(raw));
+
+  const setId = r.set_code ? await resolveSetId(r.set_code.normalize('NFKC')) : null;
+
+  // 1. Exact set + number.
+  if (setId && num) {
+    for (const localId of [String(num.n).padStart(3, '0'), String(num.n)]) {
+      const raw = await getRawCard(`${setId}-${localId}`).catch(() => null);
+      if (raw) {
+        addRaw(raw);
+        break;
+      }
     }
   }
-  if (r.name) {
-    const hits = await search(r.name).catch(() => []);
-    if (hits.length) return { reading: r, matches: byName(hits).slice(0, 24), matchedBy: 'name' };
+  // 2. Same number in every set with that printed total.
+  if (num?.total) {
+    const sets = (await listSets()).filter((s) => printedTotal(s.id, s.cardCount.official) === num.total).map((s) => s.id);
+    const cards = await cardsByNumber(sets, String(num.n));
+    await mapLimit(cards, 6, async (c) => addRaw(await getRawCard(c.id).catch(() => null)));
   }
-  return { reading: r, matches: [], matchedBy: 'none' };
+  // 3. Every printing with this name.
+  if (r.name) {
+    const briefs = await searchCards({ name: `eq:${r.name.normalize('NFKC').replace(/\s/g, '')}` }, 60).catch(() => []);
+    const loose = briefs.length ? [] : await searchCards({ name: r.name }, 40).catch(() => []);
+    await mapLimit([...briefs, ...loose].slice(0, 60), 8, async (b) => addRaw(await getRawCard(b.id).catch(() => null)));
+  }
+  // 4. Products TCGdex doesn't list (decks, build sets): SNKRDUNK knows them by set code + number.
+  if (r.set_code && num && !setId) {
+    const printed = num.raw.includes('/') ? num.raw : String(num.n).padStart(3, '0');
+    const hit = await findSnkrdunk(r.set_code, printed).catch(() => null);
+    const hits = hit ? [hit] : r.name ? await searchSnkrdunk(`${r.name} ${printed}`).catch(() => []) : [];
+    for (const h of hits.slice(0, 4)) {
+      const s = externalSummary(h);
+      if (s && !out.has(s.id)) out.set(s.id, { summary: s, hp: null, illustrator: null, image: h.image });
+    }
+  }
+  return [...out.values()];
 }
+
+interface Scored extends Candidate {
+  score: number;
+  checks: { name: boolean; number: boolean; total: boolean; set: boolean; hp: boolean | null; illustrator: boolean | null };
+}
+
+function score(r: CardReading, c: Candidate): Scored {
+  const num = parseNumber(r.number);
+  const cNum = parseNumber(c.summary.number);
+  const checks = {
+    name: !!r.name && normName(c.summary.nameJa) === normName(r.name),
+    number: !!num && !!cNum && num.n === cNum.n,
+    total: !!num?.total && !!cNum?.total && num.total === cNum.total,
+    set: !!r.set_code && c.summary.setId.toLowerCase() === r.set_code.normalize('NFKC').toLowerCase(),
+    hp: r.hp != null && c.hp != null ? r.hp === c.hp : null,
+    illustrator: r.illustrator && c.illustrator ? normName(r.illustrator) === normName(c.illustrator) : null,
+  };
+  const s =
+    (checks.name ? 6 : 0) +
+    (checks.number ? 4 : 0) +
+    (checks.total ? 1 : 0) +
+    (checks.set ? 4 : 0) +
+    (checks.hp === true ? 1 : checks.hp === false ? -5 : 0) +
+    (checks.illustrator === true ? 1 : checks.illustrator === false ? -2 : 0);
+  return { ...c, score: s, checks };
+}
+
+async function imageBlock(url: string): Promise<Anthropic.Beta.BetaContentBlockParam | null> {
+  try {
+    const res = await request(url, {}, 10000, 1);
+    const type = res.headers.get('content-type')?.split(';')[0] ?? '';
+    if (!/^image\/(jpeg|png|webp)$/.test(type)) return null;
+    const data = Buffer.from(await res.arrayBuffer()).toString('base64');
+    return { type: 'image', source: { type: 'base64', media_type: type as ImageMedia, data } };
+  } catch {
+    return null;
+  }
+}
+
+/** Ask Claude which candidate image shows the same printing as the photo. */
+async function visualCheck(photo: { data: string; media: ImageMedia }, cands: Scored[]) {
+  const blocks = await Promise.all(cands.map((c) => (c.image ? imageBlock(c.image) : Promise.resolve(null))));
+  const usable = cands.map((c, i) => ({ c, block: blocks[i] })).filter((x) => x.block);
+  if (!usable.length) return null;
+  const verdict = await structured<{ match: number | null; confidence: Confidence }>(
+    [
+      { type: 'image', source: { type: 'base64', media_type: photo.media, data: photo.data } },
+      ...usable.map((u) => u.block!),
+      { type: 'text', text: VERIFY_PROMPT(usable.length) },
+    ],
+    VERIFY_SCHEMA,
+  );
+  const picked = verdict.match != null ? usable[verdict.match - 1]?.c ?? null : null;
+  return { picked, confidence: verdict.confidence, compared: usable.map((u) => u.c) };
+}
+
+export async function matchReading(r: CardReading, photo?: { data: string; media: ImageMedia }): Promise<IdentifyResult> {
+  const empty = (note: string): IdentifyResult => ({ reading: r, matches: [], confidence: 'low', note, checks: null, matchedBy: 'none' });
+  if (!r.is_pokemon_card) return empty('Auf dem Foto wurde keine Pokémon-Karte erkannt.');
+  if (!r.name && !r.number) return empty('Name und Nummer waren nicht lesbar. Bitte näher und ohne Spiegelung fotografieren.');
+
+  const scored = (await collectCandidates(r)).map((c) => score(r, c));
+  // The name is the most robust fact on the card: never offer a card with a different name.
+  const pool = r.name ? scored.filter((c) => c.checks.name) : scored.filter((c) => c.checks.number && (c.checks.set || c.checks.total));
+  pool.sort((a, b) => b.score - a.score);
+  if (!pool.length) {
+    return empty(
+      r.name
+        ? `„${r.name}“${r.set_code ? ` (${r.set_code} ${r.number ?? ''})` : ''} wurde in keiner Datenbank gefunden. Bitte über die Suche auswählen.`
+        : 'Keine passende Karte gefunden.',
+    );
+  }
+
+  const top = pool[0];
+  const exact = top.checks.name && top.checks.number && (top.checks.set || top.checks.total) && top.checks.hp !== false;
+  const tie = pool.length > 1 && pool[1].score === top.score;
+  let confidence: Confidence = exact && !tie ? 'high' : top.checks.number || top.checks.set ? 'medium' : 'low';
+  let ordered = pool;
+  let visual: boolean | null = null;
+  let note: string | null = null;
+
+  // Reference images for cards TCGdex has no artwork for: SNKRDUNK's product photo.
+  await mapLimit(pool.slice(0, 4), 4, async (c) => {
+    if (!c.image) c.image = (await findSnkrdunk(c.summary.setId, c.summary.number).catch(() => null))?.image ?? null;
+  });
+
+  if (photo) {
+    const v = await visualCheck(photo, pool.slice(0, 4)).catch(() => null);
+    if (v) {
+      if (v.picked) {
+        visual = v.picked === top;
+        ordered = [v.picked, ...pool.filter((c) => c !== v.picked)];
+        if (v.picked !== top) {
+          confidence = 'medium';
+          note = 'Bild und aufgedruckte Daten passen nicht ganz zusammen – bitte die Karte prüfen.';
+        } else if (v.confidence !== 'high' && confidence === 'high') {
+          confidence = 'medium';
+        }
+      } else {
+        visual = false;
+        confidence = 'low';
+        note = 'Keiner der Treffer sieht genauso aus wie deine Karte (andere Version/Illustration?). Bitte auswählen oder suchen.';
+      }
+    }
+  }
+  if (!note && confidence !== 'high') {
+    const missing = [!top.checks.set && 'Set', !top.checks.number && 'Nummer', top.checks.hp === false && 'KP'].filter(Boolean);
+    note = missing.length ? `Nicht bestätigt: ${missing.join(', ')}. Bitte prüfen.` : 'Mehrere Versionen möglich – bitte prüfen.';
+  }
+  if (ordered[0].summary.id.startsWith('snk-')) {
+    note = `${note ? note + ' ' : ''}Dieses Produkt fehlt in der Kartendatenbank; Preise kommen von SNKRDUNK, Cardmarket-Preis nicht verfügbar.`;
+  }
+
+  const best = ordered[0];
+  return {
+    reading: r,
+    matches: ordered.slice(0, 12).map((c) => ({ ...c.summary, externalImage: c.summary.externalImage ?? (c.summary.image ? null : c.image) })),
+    confidence,
+    note,
+    checks: { name: best.checks.name, number: best.checks.number, set: best.checks.set, hp: best.checks.hp, visual },
+    matchedBy: best.checks.set && best.checks.number ? 'set+number' : best.checks.number ? 'number' : 'name',
+  };
+}
+
+/** Exposed for tests: the printed number of a TCGdex card as shown on the card. */
+export const printedNumber = (raw: RawCard) => formatNumber(raw.localId, printedTotal(raw.set.id, raw.set.cardCount?.official));

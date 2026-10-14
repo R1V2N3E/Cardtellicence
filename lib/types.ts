@@ -10,6 +10,7 @@ export interface CardSummary {
   nameEn: string | null;
   rarity: string | null;
   image: string | null; // TCGdex image base (append /high.webp or /low.webp)
+  externalImage?: string | null; // full image URL for cards not in TCGdex (ids "snk-…")
 }
 
 export interface CardDetail extends CardSummary {

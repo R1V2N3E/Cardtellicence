@@ -9,7 +9,7 @@ import { Spinner, Thumb } from '../components/ui';
 import { fmtEur } from '../format';
 
 const CARD_RATIO = 88 / 63; // height / width of a trading card
-const MAX_EDGE = 1280;
+const MAX_EDGE = 1600; // small print (set code, number) needs resolution
 
 type Phase =
   | { kind: 'camera' }
@@ -80,9 +80,10 @@ export function Scan() {
     setPhase({ kind: 'working', photo });
     try {
       const result = await api.identify(photo);
-      if (!result.reading.is_pokemon_card) return setPhase({ kind: 'manual', photo, reason: 'Keine Pokémon-Karte erkannt.' });
-      if (!result.matches.length)
-        return setPhase({ kind: 'manual', photo, reason: `Gelesen: ${[result.reading.set_code, result.reading.number, result.reading.name].filter(Boolean).join(' · ') || 'nichts'} – keine passende Karte gefunden.` });
+      if (!result.matches.length) {
+        const read = [result.reading.set_code, result.reading.number, result.reading.name].filter(Boolean).join(' · ');
+        return setPhase({ kind: 'manual', photo, reason: `${read ? `Gelesen: ${read}. ` : ''}${result.note ?? 'Keine passende Karte gefunden.'}` });
+      }
       setPhase({ kind: 'result', photo, result });
     } catch (e) {
       if (e instanceof ApiError && e.code === 'not_configured')
@@ -146,7 +147,7 @@ export function Scan() {
         </div>
         <div className="scan-hint">
           {added > 0 ? <span className="pro">+{added}</span> : <span className="pro">Tipp</span>}
-          {added > 0 ? ` ${added === 1 ? 'Karte' : 'Karten'} hinzugefügt. Weiter scannen!` : ' Nummer unten links gut sichtbar halten.'}
+          {added > 0 ? ` ${added === 1 ? 'Karte' : 'Karten'} hinzugefügt. Weiter scannen!` : ' Karte gerade im Rahmen, ohne Spiegelung – Nummer unten links muss lesbar sein.'}
         </div>
       </div>
 
@@ -201,58 +202,93 @@ function usePrice(id: string | undefined) {
   return price;
 }
 
+const CONFIDENCE = {
+  high: { cls: 'ok', text: '✓ Sicher erkannt' },
+  medium: { cls: 'warn', text: '⚠ Bitte prüfen' },
+  low: { cls: 'bad', text: 'Nicht sicher – bitte richtige Karte wählen' },
+} as const;
+
 function ResultSheet({ photo, result, onClose, onAdded }: { photo: string; result: IdentifyResult; onClose: () => void; onAdded: () => void }) {
   const navigate = useNavigate();
-  const [pick, setPick] = useState(0);
+  // Only a certain match is preselected; otherwise the user has to tap the right card.
+  const [pick, setPick] = useState<number | null>(result.confidence === 'low' ? null : 0);
   const [adding, setAdding] = useState(false);
-  const card = result.matches[pick];
+  const card = pick != null ? result.matches[pick] : null;
   const price = usePrice(card?.id);
   const r = result.reading;
+  const conf = CONFIDENCE[result.confidence];
+  const c = result.checks;
+  const check = (label: string, v: boolean | null | undefined) =>
+    v == null ? null : <span className={v ? 'check ok' : 'check bad'}>{v ? '✓' : '✗'} {label}</span>;
 
-  if (adding) return <AddSheet card={card} priceEur={price?.trend} photo={photo} onClose={onClose} onAdded={onAdded} />;
+  if (adding && card) return <AddSheet card={card} priceEur={price?.trend} photo={photo} onClose={onClose} onAdded={onAdded} />;
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" />
+        <div className={`confidence ${conf.cls}`}>{conf.text}</div>
         <div className="match-head">
           <img className="match-photo" src={photo} alt="Dein Foto" />
           <div className="match-arrow">→</div>
-          <Thumb id={card.id} image={card.image} alt={card.nameJa} size="high" />
+          {card ? (
+            <Thumb id={card.id} image={card.image} fallback={card.externalImage} alt={card.nameJa} size="high" />
+          ) : (
+            <div className="thumb ph match-ph">?</div>
+          )}
         </div>
-        <div className="match-info">
-          <div className="deal-name big">{card.nameEn ?? card.nameJa}</div>
-          <div className="deal-meta">
-            {card.nameEn && `${card.nameJa} · `}
-            {card.setId} {card.number} {card.rarity && `· ${card.rarity}`}
+        {card && (
+          <div className="match-info">
+            <div className="deal-name big">{card.nameEn ?? card.nameJa}</div>
+            <div className="deal-meta">
+              {card.nameEn && `${card.nameJa} · `}
+              {card.setId} {card.number} {card.rarity && `· ${card.rarity}`}
+            </div>
+            {card.setName && <div className="deal-meta">{card.setName}</div>}
+            <div className="sheet-price">
+              {price === null ? '–' : price ? fmtEur(price.trend) : '…'}{' '}
+              <small>{price?.source === 'japan' ? 'Japan-Marktpreis (umgerechnet)' : 'Cardmarket Trend'}</small>
+            </div>
           </div>
-          <div className="sheet-price">
-            {price ? fmtEur(price.trend) : '…'} <small>Cardmarket Trend</small>
+        )}
+        <div className="read-box">
+          <div>
+            <b>Auf der Karte gelesen:</b> {[r.set_code, r.number, r.rarity, r.name, r.hp != null ? `${r.hp} KP` : null].filter(Boolean).join(' · ') || '–'}
           </div>
-          <div className="hint">
-            Erkannt: {[r.set_code, r.number, r.rarity, r.name].filter(Boolean).join(' · ')}
-            {result.matchedBy !== 'set+number' && ' – bitte prüfen'}
-          </div>
+          {pick === 0 && c && (
+            <div className="checks">
+              {check('Name', c.name)}
+              {check('Nummer', c.number)}
+              {check('Set', c.set)}
+              {check('KP', c.hp)}
+              {check('Bildvergleich', c.visual)}
+            </div>
+          )}
+          {result.note && <div className="note">{result.note}</div>}
         </div>
-        {result.matches.length > 1 && (
+        {(result.matches.length > 1 || pick == null) && (
           <>
-            <div className="hint">Andere Treffer</div>
+            <div className="hint">{pick == null ? 'Tippe auf die richtige Karte:' : 'Andere Versionen dieser Karte'}</div>
             <div className="match-alts">
-              {result.matches.slice(0, 12).map((c, i) => (
-                <button key={c.id} className={i === pick ? 'alt on' : 'alt'} onClick={() => setPick(i)}>
-                  <Thumb id={c.id} image={c.image} alt={c.nameJa} />
-                  <span>{c.setId}</span>
+              {result.matches.slice(0, 12).map((m, i) => (
+                <button key={m.id} className={i === pick ? 'alt on' : 'alt'} onClick={() => setPick(i)}>
+                  <Thumb id={m.id} image={m.image} fallback={m.externalImage} alt={m.nameJa} />
+                  <span>
+                    {m.setId} {m.number.split('/')[0]}
+                  </span>
                 </button>
               ))}
             </div>
           </>
         )}
-        <button className="primary-btn" onClick={() => setAdding(true)}>
-          Zur Sammlung hinzufügen
+        <button className="primary-btn" disabled={!card} onClick={() => setAdding(true)}>
+          {card ? 'Zur Sammlung hinzufügen' : 'Erst Karte auswählen'}
         </button>
         <div className="sheet-actions">
-          <button className="link-btn" onClick={() => navigate(`/card/${encodeURIComponent(card.id)}`)}>
-            Details & Preise
-          </button>
+          {card && (
+            <button className="link-btn" onClick={() => navigate(`/card/${encodeURIComponent(card.id)}`)}>
+              Details & Preise
+            </button>
+          )}
           <button className="link-btn" onClick={onClose}>
             Neu scannen
           </button>
@@ -297,7 +333,7 @@ function ManualSheet({ photo, reason, onClose, onAdded }: { photo: string | null
         <div className="match-alts wrap">
           {results?.slice(0, 24).map((c) => (
             <button key={c.id} className="alt" onClick={() => setChosen(c)}>
-              <Thumb id={c.id} image={c.image} alt={c.nameJa} />
+              <Thumb id={c.id} image={c.image} fallback={c.externalImage} alt={c.nameJa} />
               <span>
                 {c.setId} {c.number}
               </span>
