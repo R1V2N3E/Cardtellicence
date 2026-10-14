@@ -7,6 +7,14 @@ import { useSettings } from '../state';
 
 type Sort = 'margin' | 'roi' | 'value';
 
+/** "116/80", "116/080" or "116" against a printed number like "116/080". */
+function numberMatches(number: string, q: string): boolean {
+  const m = q.match(/^#?(\d{1,3})(?:\s*\/\s*(\d{1,3}))?$/);
+  if (!m) return false;
+  const [n, total] = number.split('/').map(Number);
+  return n === Number(m[1]) && (!m[2] || total === Number(m[2]));
+}
+
 export function Deals() {
   const [settings] = useSettings();
   const [refresh, setRefresh] = useState(0);
@@ -22,7 +30,7 @@ export function Deals() {
     return data.items
       .filter((o) => (o.cmTrend ?? 0) >= settings.minTrend)
       .filter((o) => setFilter === 'all' || o.setId === setFilter)
-      .filter((o) => !q || o.nameJa.includes(q) || o.nameEn?.toLowerCase().includes(q) || o.id.toLowerCase().includes(q))
+      .filter((o) => !q || o.nameJa.includes(q) || o.nameEn?.toLowerCase().includes(q) || o.id.toLowerCase().includes(q) || numberMatches(o.number, q))
       .map((o) => ({ o, m: opportunityMargin(o, settings, data.fx.jpyToEur) }))
       .filter(({ m }) => m.buy && (!onlyPositive || (m.marginEur ?? 0) > 0))
       .sort((a, b) =>
@@ -47,7 +55,7 @@ export function Deals() {
         }
       />
       <div className="toolbar">
-        <input className="input" placeholder="Filter by name or set…" value={text} onChange={(e) => setText(e.target.value)} />
+        <input className="input" placeholder="Filter by name, set or number (116/80)…" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="row-scroll">
           <Chips<Sort> value={sort} onChange={setSort} options={[['margin', 'Margin €'], ['roi', 'ROI %'], ['value', 'Value']]} />
           <select className="select" value={setFilter} onChange={(e) => setSetFilter(e.target.value)} aria-label="Set">
@@ -77,7 +85,7 @@ export function Deals() {
         {rows.map(({ o, m }) => (
           <li key={o.id}>
             <CardLink id={o.id} className="deal">
-              <Thumb image={o.image} fallback={yuyuteiImg(o.yytUrl)} alt={o.nameJa} />
+              <Thumb id={o.id} image={o.image} fallback={yuyuteiImg(o.yytUrl) ?? o.snkImg} alt={o.nameJa} />
               <div className="deal-main">
                 <div className="deal-name">{o.nameEn ?? o.nameJa}</div>
                 <div className="deal-meta">

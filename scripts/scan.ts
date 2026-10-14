@@ -58,8 +58,8 @@ async function scanSet(setId: string, all: boolean): Promise<Opportunity[]> {
     const cm = await cardmarketFor(raw).catch(() => null);
     if (!cm?.trend || cm.trend < MIN_TREND_EUR) continue;
     const s = toSummary(raw);
-    const shop = yyt
-      .filter((r) => r.number === s.number)
+    const exact = yyt.filter((r) => r.number === s.number);
+    const shop = (exact.length ? exact : yyt.filter((r) => r.number.split('/')[0] === s.number.split('/')[0]))
       .sort((a, b) => (a.stock === 0 ? 1 : 0) - (b.stock === 0 ? 1 : 0) || a.priceJpy - b.priceJpy)[0];
     rows.push({
       id: s.id,
@@ -159,6 +159,7 @@ async function main() {
       if (hit?.priceJpy) {
         o.snkAskJpy = hit.priceJpy;
         o.snkId = hit.id;
+        if (!o.image && !o.yytUrl) o.snkImg = hit.image;
         found++;
       }
     } catch (e) {

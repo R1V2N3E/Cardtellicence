@@ -96,3 +96,11 @@ describe('margin', () => {
     expect(m.roi).toBeCloseTo(0.561, 2);
   });
 });
+
+describe('printed totals', () => {
+  it('corrects sets whose TCGdex official count differs from the print', async () => {
+    const { printedTotal } = await import('./tcgdex');
+    expect(formatNumber('174', printedTotal('SV11B', 174))).toBe('174/086');
+    expect(formatNumber('201', printedTotal('SV2a', 165))).toBe('201/165');
+  });
+});

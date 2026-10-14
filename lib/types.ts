@@ -124,6 +124,7 @@ export interface Opportunity {
   yytAsOf?: string | null; // date of the Yuyu-tei price when carried over from an earlier scan
   snkAskJpy: number | null;
   snkId?: number | null;
+  snkImg?: string | null;
 }
 
 export interface OpportunityFile {

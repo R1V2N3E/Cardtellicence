@@ -20,6 +20,7 @@ export function CardPage() {
   const [buySource, setBuySource] = useState<BuySource>(settings.buySource);
   const [sellRef, setSellRef] = useState<SellRef>(settings.sellRef);
   const [viewer, setViewer] = useState<number | null>(null);
+  const [broken, setBroken] = useState<Set<string>>(new Set());
 
   const options = useMemo(() => (r ? reportBuyOptions(r, settings.includeSoldOut) : []), [r, settings.includeSoldOut]);
   const margin = useMemo(
@@ -44,11 +45,12 @@ export function CardPage() {
 
   const { card, fx } = r;
   const images = [
-    cardImg(card.image, 'high'),
+    cardImg(card.image, 'high') ?? `/api/img?id=${encodeURIComponent(card.id)}&size=high`,
     r.snkrdunk.ok ? r.snkrdunk.image : null,
     r.yuyutei.ok ? r.yuyutei.image : null,
     ...(r.mercari.ok ? r.mercari.items.slice(0, 6).map((i) => i.thumb) : []),
   ].filter(Boolean) as string[];
+  const shown = [...new Set(images)].filter((src) => !broken.has(src));
   const watched = watch.has(card.id);
 
   return (
@@ -80,9 +82,17 @@ export function CardPage() {
 
       <section className="hero">
         <div className="gallery">
-          {images.map((src, i) => (
-            <img key={src} src={src} alt={`${card.nameJa} photo ${i + 1}`} onClick={() => setViewer(i)} loading={i ? 'lazy' : 'eager'} />
+          {shown.map((src, i) => (
+            <img
+              key={src}
+              src={src}
+              alt={`${card.nameJa} photo ${i + 1}`}
+              onClick={() => setViewer(i)}
+              loading={i ? 'lazy' : 'eager'}
+              onError={() => setBroken((b) => new Set(b).add(src))}
+            />
           ))}
+          {!shown.length && <div className="thumb ph gallery-ph">No photo available</div>}
         </div>
         <div className="facts">
           <div className="name-ja">{card.nameJa}</div>
@@ -141,7 +151,7 @@ export function CardPage() {
       {viewer != null && (
         <div className="viewer" onClick={() => setViewer(null)} role="dialog" aria-label="Photos">
           <div className="viewer-strip" ref={(el) => el?.children[viewer]?.scrollIntoView({ inline: 'center' })}>
-            {images.map((src) => (
+            {shown.map((src) => (
               <img key={src} src={src.replace('/low.webp', '/high.webp')} alt="" />
             ))}
           </div>

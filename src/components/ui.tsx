@@ -31,12 +31,17 @@ export function Chips<T extends string>({ value, options, onChange }: { value: T
   );
 }
 
-/** Card thumbnail with graceful fallback chain (TCGdex → other source → placeholder). */
-export function Thumb({ image, fallback, alt, size = 'low' }: { image: string | null; fallback?: string | null; alt: string; size?: 'low' | 'high' }) {
-  const sources = [cardImg(image, size), fallback].filter(Boolean) as string[];
-  const [i, setI] = useState(0);
+/**
+ * Card thumbnail with a fallback chain: TCGdex artwork → shop photo → /api/img (server picks
+ * the best remaining source). Advances on load errors and restarts when the sources change.
+ */
+export function Thumb({ id, image, fallback, alt, size = 'low' }: { id: string; image: string | null; fallback?: string | null; alt: string; size?: 'low' | 'high' }) {
+  const sources = [...new Set([cardImg(image, size), fallback, `/api/img?id=${encodeURIComponent(id)}${size === 'high' ? '&size=high' : ''}`])].filter(Boolean) as string[];
+  const key = sources.join('|');
+  const [state, setState] = useState({ key, i: 0 });
+  const i = state.key === key ? state.i : 0;
   if (i >= sources.length) return <div className="thumb ph" aria-label={alt}>?</div>;
-  return <img className="thumb" src={sources[i]} alt={alt} loading="lazy" onError={() => setI(i + 1)} />;
+  return <img className="thumb" src={sources[i]} alt={alt} loading="lazy" decoding="async" onError={() => setState({ key, i: i + 1 })} />;
 }
 
 export function Spinner({ label = 'Loading…' }: { label?: string }) {

@@ -5,7 +5,7 @@ import { api, loadOpportunities } from '../api';
 import { CardLink, ErrorBox, Header, Spinner, Thumb } from '../components/ui';
 import { fmtEur, yuyuteiImg } from '../format';
 
-const EXAMPLES = ['Charizard', 'Glurak', 'Umbreon', 'SV2a 201', 'M2a', 'ピカチュウ'];
+const EXAMPLES = ['Charizard', 'Glurak', '116/80', 'SV2a 201', 'M2a', 'ピカチュウ'];
 
 export function Search() {
   const [params, setParams] = useSearchParams();
@@ -45,14 +45,14 @@ export function Search() {
 
   return (
     <>
-      <Header title="Search" sub="Japanese cards · English, German or Japanese names · set + number" />
+      <Header title="Search" sub="Name (EN/DE/JP) · number like 116/80 · set + number" />
       <div className="toolbar">
         <input
           className="input big"
           type="search"
           autoCapitalize="off"
           autoCorrect="off"
-          placeholder="e.g. Charizard, Glurak, SV2a 201"
+          placeholder="e.g. Glurak, 116/80, SV2a 201"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && setParams(input ? { q: input } : {})}
@@ -75,7 +75,7 @@ export function Search() {
           const o = opps.get(c.id);
           return (
             <CardLink key={c.id} id={c.id} className="grid-card">
-              <Thumb image={c.image} fallback={yuyuteiImg(o?.yytUrl)} alt={c.nameJa} />
+              <Thumb id={c.id} image={c.image} fallback={yuyuteiImg(o?.yytUrl)} alt={c.nameJa} />
               <div className="grid-name">{c.nameEn ?? c.nameJa}</div>
               <div className="grid-meta">
                 {c.setId} {c.number}

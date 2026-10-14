@@ -33,7 +33,7 @@ export function Watchlist() {
           return (
             <li key={w.id}>
               <CardLink id={w.id} className="deal">
-                <Thumb image={w.image} fallback={w.fallbackImage} alt={w.nameJa} />
+                <Thumb id={w.id} image={w.image} fallback={w.fallbackImage} alt={w.nameJa} />
                 <div className="deal-main">
                   <div className="deal-name">{w.nameEn ?? w.nameJa}</div>
                   <div className="deal-meta">

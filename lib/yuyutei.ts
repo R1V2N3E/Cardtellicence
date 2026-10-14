@@ -68,7 +68,10 @@ export const yuyuteiSearchUrl = (q: string) =>
 
 /** Find the cheapest in-stock (else cheapest) row for a card number within its set. */
 export async function findYuyutei(setId: string, number: string) {
-  const rows = (await getYuyuteiSet(setId)).filter((r) => r.number === number);
+  const all = await getYuyuteiSet(setId);
+  let rows = all.filter((r) => r.number === number);
+  // Fall back to the card number alone when the printed total differs from our data.
+  if (!rows.length) rows = all.filter((r) => r.number.split('/')[0] === number.split('/')[0]);
   if (!rows.length) return null;
   const inStock = rows.filter((r) => r.stock !== 0);
   return (inStock.length ? inStock : rows).sort((a, b) => a.priceJpy - b.priceJpy)[0];

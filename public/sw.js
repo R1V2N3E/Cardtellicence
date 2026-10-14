@@ -1,9 +1,9 @@
 // Service worker: makes the app installable and keeps the last data available offline.
 // - HTML, API and scanner data: network first, cached copy when offline.
-// - Built assets and card images: cache first.
-const VERSION = 'v1';
+// - Built assets: cache first. Card images are left to the browser's HTTP cache: caching
+//   cross-origin (opaque) responses here could pin failed loads and exhaust Safari's quota.
+const VERSION = 'v2';
 const SHELL = `shell-${VERSION}`;
-const IMAGES = `images-${VERSION}`;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/', '/manifest.webmanifest'])));
@@ -33,7 +33,7 @@ async function cacheFirst(req, cacheName) {
   const hit = await cache.match(req);
   if (hit) return hit;
   const res = await fetch(req);
-  if (res.ok || res.type === 'opaque') cache.put(req, res.clone());
+  if (res.ok) cache.put(req, res.clone());
   return res;
 }
 
@@ -41,7 +41,6 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (req.destination === 'image') return e.respondWith(cacheFirst(req, IMAGES));
   if (url.origin !== location.origin) return;
   if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')) {
     return e.respondWith(cacheFirst(req, SHELL));

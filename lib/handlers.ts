@@ -3,8 +3,10 @@ import { getFx } from './fx.js';
 import { findPriceCharting } from './pricecharting.js';
 import { buildReport } from './report.js';
 import { search } from './search.js';
-import { getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
-import { getCard } from './tcgdex.js';
+import { cached, getJson } from './http.js';
+import { findSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
+import { formatNumber, getCard, getRawCard, printedTotal } from './tcgdex.js';
+import type { OpportunityFile } from './types.js';
 
 function json(data: unknown, maxAge: number, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -71,4 +73,42 @@ export async function fxHandler() {
   } catch (e) {
     return fail(e);
   }
+}
+
+const yyImg = (url: string, size: 'thumb' | 'high') => {
+  const m = url.match(/card\/([a-z0-9]+)\/(\d+)/);
+  return m ? `https://card.yuyu-tei.jp/poc/${size === 'high' ? 'front' : '200_280'}/${m[1]}/${m[2]}.jpg` : null;
+};
+
+/**
+ * Best available picture for a card, as a redirect: TCGdex artwork, else the Yuyu-tei
+ * scan stored by the daily scan, else SNKRDUNK's product photo. ?size=thumb|high
+ */
+export async function imgHandler(req: Request) {
+  const url = new URL(req.url);
+  const id = url.searchParams.get('id') ?? '';
+  const size = url.searchParams.get('size') === 'high' ? 'high' : 'thumb';
+  if (!CARD_ID.test(id)) return fail('invalid card id', 400);
+  const resolve = () =>
+    // Misses throw so they aren't cached; the CDN still caches the 404 for an hour.
+    cached(`img:${id}:${size}`, 24 * 3600_000, async (): Promise<string> => {
+      const raw = await getRawCard(id).catch(() => null);
+      if (raw?.image) return `${raw.image}/${size === 'high' ? 'high' : 'low'}.webp`;
+      const scan = await cached('scan-file', 10 * 60_000, () => getJson<OpportunityFile>(`${url.origin}/data/opportunities.json`)).catch(() => null);
+      const o = scan?.items.find((i) => i.id === id);
+      const fromShop = o?.yytUrl ? yyImg(o.yytUrl, size) : null;
+      if (fromShop) return fromShop;
+      if (o?.snkImg) return o.snkImg;
+      if (!raw) throw new Error('unknown card');
+      const number = formatNumber(raw.localId, printedTotal(raw.set.id, raw.set.cardCount?.official));
+      const image = (await findSnkrdunk(raw.set.id, number).catch(() => null))?.image;
+      if (!image) throw new Error('no image');
+      return image;
+    });
+  const target = await resolve().catch(() => null);
+  if (!target) return new Response('no image', { status: 404, headers: { 'cache-control': 'public, s-maxage=3600' } });
+  return new Response(null, {
+    status: 302,
+    headers: { location: target, 'cache-control': 'public, max-age=86400, s-maxage=604800' },
+  });
 }

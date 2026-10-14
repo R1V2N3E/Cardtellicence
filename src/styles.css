@@ -134,6 +134,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .gallery { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
 .gallery::-webkit-scrollbar { display: none; }
 .gallery img { flex: none; height: 300px; max-width: 80vw; object-fit: contain; border-radius: 12px; scroll-snap-align: center; background: var(--surface-2); }
+.gallery-ph { width: 214px; height: 300px; border-radius: 12px; font-size: 13px; }
 .gallery img:first-child { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); }
 .facts { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; }
 .name-ja { font-size: 17px; font-weight: 700; width: 100%; }

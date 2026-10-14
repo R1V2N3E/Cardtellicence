@@ -9,6 +9,7 @@ export interface SnkrdunkHit {
   id: number;
   label: string;
   priceJpy: number | null;
+  image: string | null;
 }
 
 /** Search via the server-rendered search page and return product tiles. */
@@ -20,7 +21,10 @@ export function searchSnkrdunk(keywords: string): Promise<SnkrdunkHit[]> {
       const id = Number(m[1]);
       const label = decodeHtml(m[2]);
       const price = label.match(/¥([\d,]+)\s*$/);
-      if (!hits.has(id)) hits.set(id, { id, label, priceJpy: price ? Number(price[1].replace(/,/g, '')) : null });
+      // The tile's product photo follows the link within the same tile.
+      const tile = html.slice(m.index! + m[0].length, m.index! + m[0].length + 1500).split('</a>')[0];
+      const image = tile.match(/src="(https:\/\/cdn\.snkrdunk\.com\/[^"?]+)/)?.[1] ?? null;
+      if (!hits.has(id)) hits.set(id, { id, label, priceJpy: price ? Number(price[1].replace(/,/g, '')) : null, image });
     }
     return [...hits.values()];
   });

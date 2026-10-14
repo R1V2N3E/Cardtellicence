@@ -7,6 +7,23 @@ const JAPANESE = /[぀-ヿ一-龯]/;
 // "SV2a 201", "sv2a-201", "M2 110/080"
 const SET_NUMBER = /^([a-z]{1,4}\d{0,2}[a-z]?)[\s-]+(\d{1,3})(?:\/\d+)?$/i;
 const SET_ONLY = /^([a-z]{1,4}\d{1,2}[a-z]?)$/i;
+// "116/80", "116/080", "116 / 80"
+const NUMBER_TOTAL = /^(\d{1,3})\s*\/\s*(\d{1,3})$/;
+// "116" — searched in the modern (Scarlet & Violet and Mega) sets
+const NUMBER_ONLY = /^#?(\d{1,3})$/;
+const MODERN_SET = /^(SV|M)\d/;
+
+/** Fetch card <n> from each set, trying the zero-padded and plain local ids. */
+async function cardsByNumber(setIds: string[], n: string): Promise<CardSummary[]> {
+  const found = await mapLimit(setIds, 8, async (setId) => {
+    for (const localId of [n.padStart(3, '0'), String(Number(n))]) {
+      const raw = await getRawCard(`${setId}-${localId}`).catch(() => null);
+      if (raw) return toSummary(raw);
+    }
+    return null;
+  });
+  return found.filter((c): c is CardSummary => c !== null).reverse(); // newest sets first
+}
 
 type Brief = { id: string; localId: string; name: string; image?: string };
 
@@ -34,6 +51,20 @@ export async function search(qRaw: string): Promise<CardSummary[]> {
         if (raw) return [toSummary(raw)];
       }
     }
+  }
+
+  const nt = q.match(NUMBER_TOTAL);
+  if (nt) {
+    const total = Number(nt[2]);
+    const sets = (await listSets()).filter((s) => s.cardCount.official === total).map((s) => s.id);
+    return cardsByNumber(sets, nt[1]);
+  }
+
+  const no = q.match(NUMBER_ONLY);
+  if (no) {
+    const n = Number(no[1]);
+    const sets = (await listSets()).filter((s) => MODERN_SET.test(s.id) && s.cardCount.total >= n).map((s) => s.id);
+    return cardsByNumber(sets, no[1]);
   }
 
   if (SET_ONLY.test(q)) {

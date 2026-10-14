@@ -41,6 +41,11 @@ export const getSet = (id: string) =>
 export const getRawCard = (id: string) =>
   cached(`tcgdex:card:${id}`, 6 * 3600_000, () => getJson<RawCard>(`${BASE}/cards/${encodeURIComponent(id)}`));
 
+// Printed set totals where TCGdex's "official" count differs from what is printed on the card.
+const PRINTED_TOTAL: Record<string, number> = { SV11B: 86 };
+
+export const printedTotal = (setId: string, official: number | undefined) => PRINTED_TOTAL[setId] ?? official;
+
 export function formatNumber(localId: string, official: number | undefined): string {
   if (!official || !/^\d+$/.test(localId)) return localId;
   const width = Math.max(3, String(official).length);
@@ -53,7 +58,7 @@ export function toDetail(raw: RawCard, releaseDate: string | null = null): CardD
     setId: raw.set.id,
     setName: raw.set.name,
     localId: raw.localId,
-    number: formatNumber(raw.localId, raw.set.cardCount?.official),
+    number: formatNumber(raw.localId, printedTotal(raw.set.id, raw.set.cardCount?.official)),
     nameJa: raw.name,
     nameEn: englishName(raw.name, raw.dexId),
     rarity: raw.rarity ?? null,
