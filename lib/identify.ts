@@ -47,7 +47,9 @@ let client: Anthropic | null = null;
 export const identifyConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY);
 
 export async function readCard(imageBase64: string, mediaType: 'image/jpeg' | 'image/png' | 'image/webp'): Promise<CardReading> {
-  client ??= new Anthropic();
+  // Organization-level API keys (not scoped to a workspace) must name the workspace per request.
+  const workspace = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  client ??= new Anthropic(workspace ? { defaultHeaders: { 'anthropic-workspace-id': workspace } } : {});
   const response = await client.beta.messages.create({
     model: 'claude-opus-5-5',
     max_tokens: 2000,

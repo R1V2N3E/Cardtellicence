@@ -40,7 +40,7 @@ Margin = Cardmarket price − Japanese price × ECB rate. Fees, shipping and imp
 2. **Daily scan**: GitHub → repository → *Settings → Actions → General* → *Workflow permissions* → **Read and write permissions** → Save.
    The `Daily price scan` workflow then runs every day at 03:17 UTC, commits `public/data/`, and Vercel redeploys automatically.
    To refresh deals right away: *Actions → Daily price scan → Run workflow* (optionally with a set list like `SV2a,M2a`).
-3. **Card scanning** (optional, ~1 cent per scan): create an API key at [console.anthropic.com](https://console.anthropic.com) → in Vercel *Project → Settings → Environment Variables* add `ANTHROPIC_API_KEY`, and optionally `APP_ACCESS_CODE` (any password; enter the same in the app under Einstellungen so strangers can't scan on your bill) → *Redeploy*.
+3. **Card scanning** (optional, ~1 cent per scan): create an API key at [console.anthropic.com](https://console.anthropic.com) → in Vercel *Project → Settings → Environment Variables* add `ANTHROPIC_API_KEY` (if the key is not scoped to a workspace, also add `ANTHROPIC_WORKSPACE_ID` = the workspace ID `wrkspc_…` from Console → Settings → Workspaces), and optionally `APP_ACCESS_CODE` (any password; enter the same in the app under Einstellungen so strangers can't scan on your bill) → *Redeploy*.
    Without a key the scanner still works: it asks you to type the number printed on the card (e.g. `116/80`).
 4. **iPhone**: open your Vercel URL in **Safari** → **Share** → **Add to Home Screen**. It then opens full screen with its own icon.
 
