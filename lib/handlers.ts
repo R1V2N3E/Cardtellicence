@@ -231,9 +231,14 @@ export async function pricesHandler(req: Request) {
 /** The part of a Card Rush price the portfolio needs. */
 const liveCr = (p: CardRushPrice | null) => p && { jpy: p.priceJpy, stock: p.stock, buyJpy: p.buyJpy, url: p.url, updatedAt: p.updatedAt };
 
-/** Card Rush prices of one set (?set=SV2a), or one card (&number=201/165). */
+/** Card Rush prices of one set (?set=SV2a), one card (&number=201/165), or a set's box/pack (?sealed=<set name>). */
 export async function cardrushHandler(req: Request) {
   const url = new URL(req.url);
+  const sealed = url.searchParams.get('sealed');
+  if (sealed != null) {
+    if (!sealed || sealed.length > 60) return fail('invalid set name', 400);
+    return cardrushSealed(sealed).then((r) => json(r, 900), (e) => fail(e));
+  }
   const set = url.searchParams.get('set') ?? '';
   const number = url.searchParams.get('number');
   if (!/^[A-Za-z0-9.-]{1,20}$/.test(set)) return fail('invalid set id', 400);

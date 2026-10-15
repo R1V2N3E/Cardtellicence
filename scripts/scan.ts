@@ -51,6 +51,14 @@ async function cardrushForScan(setId: string): Promise<Map<string, CardRushPrice
   }
 }
 
+async function cardrushSealedForScan(setName: string) {
+  try {
+    return await cardrushSealed(setName);
+  } catch {
+    return await getJson<Awaited<ReturnType<typeof cardrushSealed>>>(`${APP_URL}/api/cardrush?sealed=${encodeURIComponent(setName)}`);
+  }
+}
+
 const OUT_DIR = new URL('../public/data/', import.meta.url);
 const today = new Date().toISOString().slice(0, 10);
 const log = (...a: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -209,7 +217,7 @@ async function main() {
   }
   // Card Rush box/pack prices (listed by set name).
   for (const x of sealed) {
-    const rush = await cardrushSealed(x.setName).catch(() => null);
+    const rush = await cardrushSealedForScan(x.setName).catch(() => null);
     const p = rush?.[x.kind];
     if (p) Object.assign(x, { crJpy: p.priceJpy, crStock: p.stock, crBuyJpy: p.buyJpy, crUrl: p.url });
   }
