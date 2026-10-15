@@ -77,8 +77,8 @@ export function PortfolioChart({
     const from = range === 'all' ? 0 : now - Number(range) * DAY;
     const inRange = (pts: { t: number; v: number }[]) => pts.filter((p) => p.t >= from);
     const out: Series[] = [
-      { label: 'Tageswerte', color: '#3b82f6', points: inRange(daily) },
-      { label: 'Rückblick (Cardmarket-Ø)', color: '#8fb3ff', dashed: true, points: inRange(lookback) },
+      { label: 'Tageswerte', color: '#8b7cff', points: inRange(daily) },
+      { label: 'Rückblick (Cardmarket-Ø)', color: '#2ed8f0', dashed: true, points: inRange(lookback) },
     ];
     return { series: out, delta7: today - lookback[1].v };
   }, [items, prices, histories, snapshots, range, factor]);

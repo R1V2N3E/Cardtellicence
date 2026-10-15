@@ -10,7 +10,7 @@ import { BUY_LABEL, computeMargin, pickBuy, reportBuyOptions, reportSell, SELL_L
 import { useCollection, useSettings, useWatchlist, type BuySource, type SellRef } from '../state';
 import { AddSheet } from '../components/AddSheet';
 
-const COLORS = { snk: '#ff7a45', cm: '#4f8cff', cmAvg: '#8fb3ff', yyt: '#2ec27e', pc: '#c061cb' };
+const COLORS = { snk: '#ff9f5a', cm: '#8b7cff', cmAvg: '#b8adff', yyt: '#3ee6a8', pc: '#f472b6' };
 type Range = 'oneWeek' | 'oneMonth' | 'threeMonths' | 'all';
 const RANGE_DAYS: Record<Range, number> = { oneWeek: 7, oneMonth: 31, threeMonths: 92, all: 3650 };
 

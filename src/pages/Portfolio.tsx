@@ -141,7 +141,7 @@ export function Portfolio() {
     const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), items }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `cardtellicence-sammlung-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `cardtelligence-sammlung-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setMenu(false);
   };

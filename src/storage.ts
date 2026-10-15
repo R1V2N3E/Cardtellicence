@@ -2,7 +2,7 @@
 // - asks the browser for persistent storage (not evicted under storage pressure),
 // - mirrors every saved key into IndexedDB as a second copy,
 // - restores from that copy if localStorage was ever cleared.
-const DB = 'cardtellicence';
+const DB = 'cardtellicence'; // original app name; kept so saved data stays readable
 const STORE = 'kv';
 export const PERSISTED_KEYS = ['ct-collection', 'ct-watch', 'ct-settings', 'ct-portfolio-history', 'ct-access-code'];
 

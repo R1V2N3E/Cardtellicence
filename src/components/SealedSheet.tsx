@@ -28,9 +28,9 @@ export function SealedSheet({ item, fx, sellRef, onClose }: { item: SealedItem; 
   const chart = useAsync(() => (item.snkId ? api.sealedChart(item.snkId, range) : Promise.resolve([])), [item.snkId, range]);
   const series = useMemo(() => {
     const pts = (chart.data ?? []).map((p) => ({ t: p.t, v: p.v * fx.jpyToEur }));
-    const out = [{ label: 'SNKRDUNK verkauft', color: '#ff7a45', points: pts }];
+    const out = [{ label: 'SNKRDUNK verkauft', color: '#ff9f5a', points: pts }];
     if (item.cmTrend && pts.length)
-      out.push({ label: 'Cardmarket-Trend aktuell', color: '#8fb3ff', points: [{ t: pts[0].t, v: item.cmTrend }, { t: Date.now(), v: item.cmTrend }], dashed: true } as never);
+      out.push({ label: 'Cardmarket-Trend aktuell', color: '#b8adff', points: [{ t: pts[0].t, v: item.cmTrend }, { t: Date.now(), v: item.cmTrend }], dashed: true } as never);
     return out;
   }, [chart.data, item, fx]);
 

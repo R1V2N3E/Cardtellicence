@@ -26,6 +26,12 @@ export interface Series {
   stepped?: boolean;
 }
 
+// '#rrggbb' + alpha → rgba()
+const alpha = (hex: string, a: number) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 export function PriceChart({ series, height = 220 }: { series: Series[]; height?: number }) {
@@ -42,12 +48,22 @@ export function PriceChart({ series, height = 220 }: { series: Series[]; height?
       data: {
         datasets: series
           .filter((s) => s.points.length)
-          .map((s) => ({
+          .map((s, i) => ({
             label: s.label,
             data: s.points.map((p) => ({ x: p.t, y: Math.round(p.v * 100) / 100 })),
             borderColor: s.color,
-            backgroundColor: s.color,
-            borderWidth: 2,
+            // The main line gets a soft glow fill down to the axis.
+            backgroundColor: (c: { chart: Chart }) => {
+              const area = c.chart.chartArea;
+              if (i > 0 || s.dashed || !area) return s.color;
+              const g = c.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+              g.addColorStop(0, alpha(s.color, 0.32));
+              g.addColorStop(1, alpha(s.color, 0));
+              return g;
+            },
+            fill: i === 0 && !s.dashed ? 'start' : false,
+            borderWidth: i === 0 ? 2.5 : 2,
+            pointBackgroundColor: s.color,
             borderDash: s.dashed ? [5, 4] : undefined,
             stepped: s.stepped,
             pointRadius: s.points.length > 40 ? 0 : 2.5,
@@ -61,12 +77,12 @@ export function PriceChart({ series, height = 220 }: { series: Series[]; height?
         animation: false,
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
         scales: {
-          x: { type: 'time', adapters: { date: { locale: de } }, time: { tooltipFormat: 'dd.MM.yyyy', displayFormats: { day: 'd. MMM', week: 'd. MMM', month: 'MMM yy' } }, grid: { color: grid }, ticks: { color: muted, maxTicksLimit: 5 } },
-          y: { grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtEur(Number(v)), maxTicksLimit: 6 } },
+          x: { type: 'time', adapters: { date: { locale: de } }, time: { tooltipFormat: 'dd.MM.yyyy', displayFormats: { day: 'd. MMM', week: 'd. MMM', month: 'MMM yy' } }, grid: { display: false }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } },
+          y: { grid: { color: grid }, border: { display: false }, ticks: { color: muted, callback: (v) => fmtEur(Number(v)), maxTicksLimit: 6 } },
         },
         plugins: {
-          legend: { position: 'bottom', labels: { color: muted, boxWidth: 12, boxHeight: 2, font: { size: 11 } } },
-          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmtEur(c.parsed.y)}` } },
+          legend: { position: 'bottom', labels: { color: muted, boxWidth: 12, boxHeight: 2, font: { size: 11 }, generateLabels: (c) => Chart.defaults.plugins.legend.labels.generateLabels(c).map((l) => ({ ...l, fillStyle: l.strokeStyle })) } },
+          tooltip: { backgroundColor: css('--surface-3'), titleColor: css('--text'), bodyColor: css('--text'), borderColor: css('--border-strong'), borderWidth: 1, cornerRadius: 10, padding: 10, callbacks: { label: (c) => `${c.dataset.label}: ${fmtEur(c.parsed.y)}` } },
         },
       },
     });

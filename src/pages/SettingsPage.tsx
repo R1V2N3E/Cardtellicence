@@ -20,7 +20,7 @@ export function SettingsPage() {
     const data = { version: 2, exportedAt: new Date().toISOString(), collection: collection.items, watchlist: watch.list, settings: s };
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    a.download = `cardtellicence-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `cardtelligence-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
   };
   const restore = async (file: File | undefined) => {

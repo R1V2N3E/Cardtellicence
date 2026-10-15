@@ -5,7 +5,7 @@ import { Logo } from './Logo';
 export function AppBar() {
   return (
     <header className="appbar">
-      <Logo icon={false} />
+      <Logo />
       <div className="appbar-right">
         <span className="currency">🇪🇺 EUR</span>
         <Link to="/settings" className="icon-btn ghost" aria-label="Einstellungen">

@@ -1,4 +1,4 @@
-# Cardtellicence
+# Cardtelligence
 
 Mobile web app (installable on iPhone) for **Japan → Germany Pokémon card arbitrage**:
 find Japanese cards that are cheap in Japan and sell for more on Cardmarket.
