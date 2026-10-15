@@ -105,6 +105,7 @@ export function CardPage() {
         </div>
         <div className="facts">
           <div className="name-ja">{card.nameJa}</div>
+          {r.sell?.nameDe && <span className="badge de-name">🇩🇪 {r.sell.nameDe}</span>}
           {card.rarity && <span className="badge">{card.rarity}</span>}
           {card.illustrator && <div className="muted">Illustration: {card.illustrator}</div>}
           {card.releaseDate && <div className="muted">Erschienen {new Date(card.releaseDate).toLocaleDateString('de-DE')}</div>}
@@ -154,6 +155,32 @@ export function CardPage() {
       </section>
 
       <PriceTables r={r} />
+      {r.sell && (
+        <section className="panel">
+          <h2>🇩🇪 Verkaufen in Deutschland</h2>
+          <div className="sell-grid">
+            <a className="sell-btn primary" href={r.sell.ebaySold} target="_blank" rel="noreferrer">
+              <b>eBay.de</b>
+              <span>verkaufte Artikel</span>
+            </a>
+            <a className="sell-btn" href={r.sell.ebayLive} target="_blank" rel="noreferrer">
+              <b>eBay.de</b>
+              <span>aktuelle Angebote</span>
+            </a>
+            <a className="sell-btn" href={r.sell.kleinanzeigen} target="_blank" rel="noreferrer">
+              <b>Kleinanzeigen</b>
+              <span>Angebote</span>
+            </a>
+            {r.cardmarket.url && (
+              <a className="sell-btn" href={r.cardmarket.url} target="_blank" rel="noreferrer">
+                <b>Cardmarket</b>
+                <span>{r.cardmarket.ok && r.cardmarket.trend ? `Trend ${fmtEur(r.cardmarket.trend)}` : 'Angebote'}</span>
+              </a>
+            )}
+          </div>
+          <p className="hint">Suche: „{r.sell.query}“. eBay und Kleinanzeigen erlauben kein automatisches Auslesen, daher direkte Links.</p>
+        </section>
+      )}
       <Charts r={r} />
       <RecentSales r={r} />
       <Graded r={r} />

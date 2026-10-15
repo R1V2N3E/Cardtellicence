@@ -35,6 +35,8 @@ export function AddSheet({
       number: card.number,
       rarity: card.rarity,
       image: card.image,
+      photo: card.externalImage ?? null, // never the scanned photo itself (too large to store)
+      kind: card.id.startsWith('cm-') ? 'sealed' : 'card',
       qty,
       condition,
       cost: cost && amount > 0 ? { amount, currency } : null,
@@ -48,7 +50,7 @@ export function AddSheet({
       <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Zur Sammlung hinzufügen">
         <div className="sheet-grip" />
         <div className="sheet-card">
-          <Thumb id={card.id} image={card.image} fallback={photo} alt={card.nameJa} />
+          <Thumb id={card.id} image={card.image} fallback={card.externalImage ?? photo} alt={card.nameJa} />
           <div>
             <div className="deal-name">{card.nameEn ?? card.nameJa}</div>
             <div className="deal-meta">

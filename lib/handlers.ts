@@ -6,6 +6,7 @@ import { search } from './search.js';
 import { cached, getJson, mapLimit } from './http.js';
 import { identifyConfigured, matchReading, readCard } from './identify.js';
 import { searchMercari } from './mercari.js';
+import { getSnkrdunkSealedChart, sealedPrices } from './sealed.js';
 import { externalSnkId, getExternalCard, isExternalId } from './external.js';
 import { cardmarketFor } from './prices.js';
 import { findSnkrdunk, getSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
@@ -24,7 +25,7 @@ function json(data: unknown, maxAge: number, status = 200): Response {
 }
 
 const fail = (e: unknown, status = 502) => json({ error: e instanceof Error ? e.message : String(e) }, 0, status);
-const CARD_ID = /^[A-Za-z0-9.-]{2,30}$/;
+const CARD_ID = /^[A-Za-z0-9.-]{2,30}$/; // TCGdex ids, "snk-<n>" (decks), "cm-<n>" (sealed)
 
 export async function searchHandler(req: Request) {
   const q = new URL(req.url).searchParams.get('q') ?? '';
@@ -58,6 +59,12 @@ export async function chartHandler(req: Request) {
       const range = p.get('range') ?? 'threeMonths';
       if (!id || !cond || !(SNK_RANGES as readonly string[]).includes(range)) return fail('bad params', 400);
       return json({ points: await getSnkrdunkChart(id, cond, range) }, 3600);
+    }
+    if (p.get('source') === 'snkrdunk-sealed') {
+      const id = Number(p.get('id'));
+      const range = p.get('range') ?? 'threeMonths';
+      if (!id || !(SNK_RANGES as readonly string[]).includes(range)) return fail('bad params', 400);
+      return json({ points: await getSnkrdunkSealedChart(id, range) }, 3600);
     }
     if (p.get('source') === 'pricecharting') {
       const cardId = p.get('card') ?? '';
@@ -147,6 +154,10 @@ export async function pricesHandler(req: Request) {
   try {
     const fx = await getFx().catch(() => null);
     const entries = await mapLimit(ids, 8, async (id) => {
+      if (id.startsWith('cm-')) {
+        const cm = await sealedPrices(id).catch(() => null);
+        return [id, cm && { trend: cm.trend, avg1: cm.avg1, avg7: cm.avg7, avg30: cm.avg30, low: cm.low, updated: cm.updated, source: 'cardmarket' }] as const;
+      }
       if (isExternalId(id)) {
         // No Cardmarket product: value at SNKRDUNK's recent sold price (else lowest ask), in EUR.
         const snk = await getSnkrdunk(externalSnkId(id)).catch(() => null);

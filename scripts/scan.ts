@@ -12,6 +12,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { getFx } from '../lib/fx.js';
 import { mapLimit } from '../lib/http.js';
 import { findSnkrdunk } from '../lib/snkrdunk.js';
+import { sealedForSet } from '../lib/sealed.js';
+import type { SealedItem } from '../lib/types.js';
 import { cardmarketFor } from '../lib/prices.js';
 import { getRawCard, getSet, listSets, toSummary } from '../lib/tcgdex.js';
 import type { HistoryFile, Opportunity, OpportunityFile } from '../lib/types.js';
@@ -170,13 +172,26 @@ async function main() {
   }
   log(`snkrdunk asks for ${found}/${queue.length}`);
 
+  // Sealed: booster box + pack per scanned set (Cardmarket price guide vs. SNKRDUNK).
+  const sealed: SealedItem[] = [];
+  for (const setId of sets) {
+    try {
+      sealed.push(...(await sealedForSet(setId)));
+    } catch (e) {
+      log(`  sealed ${setId}: ${(e as Error).message}`);
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  log(`sealed products: ${sealed.length} (${sealed.filter((x) => x.snkAskJpy).length} with SNKRDUNK price)`);
+
   // A partial scan (SCAN_SETS) refreshes only its sets and keeps the rest of the last scan.
   if (process.env.SCAN_SETS && prev) {
     const scanned = new Set(sets);
     items.unshift(...prev.items.filter((o) => !scanned.has(o.setId)));
     setMeta.unshift(...prev.sets.filter((s) => !scanned.has(s.id)));
+    sealed.unshift(...(prev.sealed ?? []).filter((x) => !scanned.has(x.setId)));
   }
-  const file: OpportunityFile = { generatedAt: new Date().toISOString(), fx, sets: setMeta, items };
+  const file: OpportunityFile = { generatedAt: new Date().toISOString(), fx, sets: setMeta, items, sealed };
   writeFileSync(outFile, JSON.stringify(file));
   writeHistory(items.filter((o) => sets.includes(o.setId)));
   log(`wrote ${items.length} cards`);

@@ -4,6 +4,8 @@ import { CardLink, Chips, ErrorBox, Header, Spinner, Thumb } from '../components
 import { ago, fmtEur, fmtJpy, fmtPct, fmtSigned, marginClass, yuyuteiImg } from '../format';
 import { BUY_LABEL, opportunityMargin, SELL_LABEL } from '../margin';
 import { useSettings } from '../state';
+import { SealedSheet, sealedLabel, sealedMargin } from '../components/SealedSheet';
+import type { SealedItem } from '../../lib/types';
 
 type Sort = 'margin' | 'roi' | 'value';
 
@@ -40,6 +42,8 @@ export function Deals() {
   const [setFilter, setSetFilter] = useState('all');
   const [text, setText] = useState('');
   const [onlyPositive, setOnlyPositive] = useState(true);
+  const [kind, setKind] = useState<'cards' | 'sealed'>('cards');
+  const [openSealed, setOpenSealed] = useState<SealedItem | null>(null);
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -54,6 +58,20 @@ export function Deals() {
         sort === 'roi' ? (b.m.roi ?? -9) - (a.m.roi ?? -9) : sort === 'value' ? (b.m.sellEur ?? 0) - (a.m.sellEur ?? 0) : (b.m.marginEur ?? -1e9) - (a.m.marginEur ?? -1e9),
       )
       .slice(0, 200);
+  }, [data, fx, settings, sort, setFilter, text, onlyPositive]);
+
+  const sealedRows = useMemo(() => {
+    if (!data?.sealed) return [];
+    const q = text.trim().toLowerCase();
+    const rate = fx ?? data.fx;
+    return data.sealed
+      .filter((x) => setFilter === 'all' || x.setId === setFilter)
+      .filter((x) => !q || x.nameEn.toLowerCase().includes(q) || x.setName.includes(q) || x.setId.toLowerCase().includes(q))
+      .map((x) => ({ x, m: sealedMargin(x, settings.sellRef, rate) }))
+      .filter(({ m }) => !onlyPositive || (m.marginEur ?? 0) > 0)
+      .sort((a, b) =>
+        sort === 'roi' ? (b.m.roi ?? -9) - (a.m.roi ?? -9) : sort === 'value' ? (b.m.sellEur ?? 0) - (a.m.sellEur ?? 0) : (b.m.marginEur ?? -1e9) - (a.m.marginEur ?? -1e9),
+      );
   }, [data, fx, settings, sort, setFilter, text, onlyPositive]);
 
   return (
@@ -76,6 +94,14 @@ export function Deals() {
           {toast}
         </div>
       )}
+      <div className="seg-tabs deals-seg">
+        <button className={kind === 'cards' ? 'seg on' : 'seg'} onClick={() => setKind('cards')}>
+          Karten
+        </button>
+        <button className={kind === 'sealed' ? 'seg on' : 'seg'} onClick={() => setKind('sealed')}>
+          Sealed {data?.sealed?.length ? `(${data.sealed.length})` : ''}
+        </button>
+      </div>
       <div className="toolbar">
         <input className="input" placeholder="Name, Set oder Nummer (116/80)…" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="row-scroll">
@@ -99,10 +125,43 @@ export function Deals() {
       {error && <ErrorBox message={`Scan konnte nicht geladen werden: ${error}`} />}
       {data && (
         <p className="hint">
-          1 € = {fmtJpy(1 / (fx ?? data.fx).jpyToEur)} (EZB {(fx ?? data.fx).date}) · {rows.length} Karten · min. Cardmarket {fmtEur(settings.minTrend)}
+          1 € = {fmtJpy(1 / (fx ?? data.fx).jpyToEur)} (EZB {(fx ?? data.fx).date}) · {kind === 'sealed' ? `${sealedRows.length} Produkte` : `${rows.length} Karten · min. Cardmarket ${fmtEur(settings.minTrend)}`}
         </p>
       )}
 
+      {kind === 'sealed' && (
+        <>
+          {data && !data.sealed?.length && <p className="empty">Sealed-Daten kommen mit dem nächsten täglichen Scan.</p>}
+          <ul className="list">
+            {sealedRows.map(({ x, m }) => (
+              <li key={x.id}>
+                <button className="deal sealed-row" onClick={() => setOpenSealed(x)}>
+                  {x.image ? <img className="thumb sealed-thumb" src={x.image} alt="" loading="lazy" /> : <div className="thumb ph">📦</div>}
+                  <div className="deal-main">
+                    <div className="deal-name">{x.nameEn}</div>
+                    <div className="deal-meta">
+                      {x.setId} · {sealedLabel(x)}
+                    </div>
+                    <div className="deal-prices">
+                      <span className="jp">
+                        🇯🇵 {fmtJpy(x.snkAskJpy)} <small>SNKRDUNK</small>
+                      </span>
+                      <span className="de">🇩🇪 {fmtEur(m.sellEur)}</span>
+                    </div>
+                  </div>
+                  <div className={`deal-margin ${marginClass(m.marginEur)}`}>
+                    <strong>{fmtSigned(m.marginEur)}</strong>
+                    <small>{fmtPct(m.roi)}</small>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {openSealed && data && <SealedSheet item={openSealed} fx={fx ?? data.fx} sellRef={settings.sellRef} onClose={() => setOpenSealed(null)} />}
+
+      {kind === 'cards' && (
       <ul className="list">
         {rows.map(({ o, m }, idx) => (
           <li key={o.id}>
@@ -138,7 +197,8 @@ export function Deals() {
           </li>
         ))}
       </ul>
-      {data && !rows.length && <p className="empty">Keine Treffer. Senke den Mindestpreis in den Einstellungen oder zeige ausverkaufte Karten.</p>}
+      )}
+      {kind === 'cards' && data && !rows.length && <p className="empty">Keine Treffer. Senke den Mindestpreis in den Einstellungen oder zeige ausverkaufte Karten.</p>}
     </>
   );
 }

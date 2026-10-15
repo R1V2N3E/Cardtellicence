@@ -8,7 +8,8 @@ import { ago, fmtEur, fmtJpy, fmtSigned, marginClass } from '../format';
 import { CONDITIONS, readPortfolioHistory, recordPortfolioValue, useCollection, type CollectionItem, type Condition } from '../state';
 import { Watchlist } from './Watchlist';
 
-type Tab = 'cards' | 'sets' | 'watch';
+type Tab = 'cards' | 'sealed' | 'sets' | 'watch';
+const isSealed = (i: CollectionItem) => i.kind === 'sealed' || i.cardId.startsWith('cm-');
 type Sort = 'value' | 'recent' | 'name' | 'profit';
 const REFRESH_MS = 5 * 60_000;
 
@@ -111,6 +112,7 @@ export function Portfolio() {
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
     return items
+      .filter((i) => (tab === 'sealed' ? isSealed(i) : !isSealed(i)))
       .filter((i) => !s || i.nameJa.includes(s) || i.nameEn?.toLowerCase().includes(s) || i.setId.toLowerCase().includes(s) || i.number.includes(s))
       .sort((a, b) => {
         if (sort === 'recent') return b.addedAt.localeCompare(a.addedAt);
@@ -118,7 +120,7 @@ export function Portfolio() {
         if (sort === 'profit') return ((unitValue(b) ?? 0) - (costEur(b) ?? unitValue(b) ?? 0)) * b.qty - ((unitValue(a) ?? 0) - (costEur(a) ?? unitValue(a) ?? 0)) * a.qty;
         return (unitValue(b) ?? 0) * b.qty - (unitValue(a) ?? 0) * a.qty;
       });
-  }, [items, prices, sort, q, fx]);
+  }, [items, prices, sort, q, fx, tab]);
 
   const sets = useMemo(() => {
     const m = new Map<string, { setId: string; setName: string; cards: number; value: number; image: string | null; cardId: string }>();
@@ -159,6 +161,7 @@ export function Portfolio() {
         {(
           [
             ['cards', 'Karten'],
+            ['sealed', 'Sealed'],
             ['sets', 'Sets'],
             ['watch', 'Merkliste'],
           ] as [Tab, string][]
@@ -237,7 +240,7 @@ export function Portfolio() {
             </div>
           )}
 
-          {tab === 'cards' && (
+          {(tab === 'cards' || tab === 'sealed') && (
             <>
               {items.length > 0 && (
                 <div className="row-scroll">
@@ -251,10 +254,10 @@ export function Portfolio() {
                   const body = (
                     <>
                       <div className="pf-img">
-                        <Thumb id={i.cardId} image={i.image} alt={i.nameJa} />
+                        <Thumb id={i.cardId} image={i.image} fallback={i.photo} alt={i.nameJa} />
                       </div>
                       <div className="pf-name">{i.nameEn ?? i.nameJa}</div>
-                      <div className="pf-num">#{i.number.split('/')[0]}</div>
+                      <div className="pf-num">{isSealed(i) ? i.number : `#${i.number.split('/')[0]}`}</div>
                       <div className="pf-price">
                         {v != null ? fmtEur(v) : prices[i.cardId] === null ? 'kein Preis' : '…'}
                         {c != null && v != null && <span className={`pf-pl ${marginClass(v - c)}`}>{fmtSigned(v - c)}</span>}
@@ -262,7 +265,7 @@ export function Portfolio() {
                       <div className="pf-set">{i.setName || i.setId}</div>
                       {i.cost && <div className="pf-cost">Einkauf {i.cost.currency === 'JPY' ? fmtJpy(i.cost.amount) : fmtEur(i.cost.amount)}</div>}
                       <div className="pf-meta">
-                        <span>{conditionLabel(i.condition)}</span>
+                        <span>{isSealed(i) ? 'Versiegelt' : conditionLabel(i.condition)}</span>
                         <span>Anz.: {i.qty}</span>
                       </div>
                     </>
@@ -300,6 +303,9 @@ export function Portfolio() {
                   );
                 })}
               </div>
+              {tab === 'sealed' && items.length > 0 && !list.length && (
+                <p className="empty">Noch keine Sealed-Produkte. Füge Displays oder Booster über Deals → Sealed hinzu.</p>
+              )}
               {items.length > 0 && (
                 <p className="hint">Wert = Cardmarket-Trend der japanischen Ausgabe; gespielte Zustände geschätzt (LP −15 %, MP −30 %, HP −50 %). PSA-Karten zum Rohpreis.</p>
               )}

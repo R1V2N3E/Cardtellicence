@@ -7,7 +7,8 @@ import { cardmarketUrl, getCard } from './tcgdex.js';
 import { cached, getJson } from './http.js';
 import { findYuyutei, yuyuteiSearchUrl } from './yuyutei.js';
 import { externalSnkId, getExternalCard, isExternalId } from './external.js';
-import { englishName } from './pokedex.js';
+import { englishName, germanName } from './pokedex.js';
+import { sellLinks } from './selling.js';
 import type { CardDetail, CardReport, OpportunityFile, SourceResult, YuyuteiPrice } from './types.js';
 
 /**
@@ -69,6 +70,7 @@ export async function buildReport(id: string, origin?: string, part: 'all' | 'co
       pricecharting: PENDING,
       fetchedAt: new Date().toISOString(),
       partial: true,
+      sell: { ...sellLinks(detail), nameDe: germanName(detail.nameJa, detail.dexId) },
     };
   }
 
@@ -111,6 +113,7 @@ export async function buildReport(id: string, origin?: string, part: 'all' | 'co
     mercari,
     pricecharting,
     fetchedAt: new Date().toISOString(),
+    sell: { ...sellLinks(detail), nameDe: germanName(detail.nameJa, detail.dexId) },
   };
 }
 
@@ -147,5 +150,6 @@ async function buildExternalReport(id: string): Promise<CardReport> {
     mercari,
     pricecharting: { ok: false, error: 'Nicht verfügbar für dieses Produkt' },
     fetchedAt: new Date().toISOString(),
+    sell: { ...sellLinks(detail), nameDe: germanName(detail.nameJa, []) },
   };
 }

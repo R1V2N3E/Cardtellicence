@@ -33,6 +33,8 @@ export const api = {
   card: (id: string) => getJson<CardReport>(`/api/card?id=${encodeURIComponent(id)}`),
   snkChart: (id: number, cond: string, range: string) =>
     getJson<{ points: ChartPoint[] }>(`/api/chart?source=snkrdunk&id=${id}&cond=${cond}&range=${range}`).then((r) => r.points),
+  sealedChart: (id: number, range: string) =>
+    getJson<{ points: ChartPoint[] }>(`/api/chart?source=snkrdunk-sealed&id=${id}&range=${range}`).then((r) => r.points),
   pcChart: (card: string) => getJson<{ ungraded: ChartPoint[]; psa10: ChartPoint[] }>(`/api/chart?source=pricecharting&card=${encodeURIComponent(card)}`),
   // fresh: bypass browser, service-worker and CDN caches (manual refresh).
   opportunities: (fresh = false) =>

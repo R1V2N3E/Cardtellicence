@@ -1,12 +1,44 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { requestPersistence, storageStatus, type StorageStatus } from '../storage';
 import { Chips, Header } from '../components/ui';
 import { BUY_LABEL, SELL_LABEL } from '../margin';
-import { DEFAULT_SETTINGS, readAccessCode, useSettings, writeAccessCode, type BuySource, type SellRef } from '../state';
+import { DEFAULT_SETTINGS, readAccessCode, useCollection, useSettings, useWatchlist, writeAccessCode, type BuySource, type SellRef } from '../state';
 
 export function SettingsPage() {
   const [s, setS] = useSettings();
   const set = <K extends keyof typeof s>(k: K, v: (typeof s)[K]) => setS({ ...s, [k]: v });
   const [code, setCode] = useState(readAccessCode());
+  const collection = useCollection();
+  const watch = useWatchlist();
+  const [status, setStatus] = useState<StorageStatus | null>(null);
+  const importInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    storageStatus().then(setStatus);
+  }, []);
+
+  const backup = () => {
+    const data = { version: 2, exportedAt: new Date().toISOString(), collection: collection.items, watchlist: watch.list, settings: s };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    a.download = `cardtellicence-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+  };
+  const restore = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const items = Array.isArray(data) ? data : data.collection ?? data.items;
+      if (!Array.isArray(items)) throw new Error('format');
+      if (!confirm(`Backup mit ${items.length} Sammlungs-Einträgen laden? Die aktuellen Daten auf diesem Gerät werden ersetzt.`)) return;
+      collection.replaceAll(items);
+      if (Array.isArray(data.watchlist)) localStorage.setItem('ct-watch', JSON.stringify(data.watchlist));
+      if (data.settings) setS({ ...DEFAULT_SETTINGS, ...data.settings });
+      alert('Backup geladen.');
+      location.reload();
+    } catch {
+      alert('Datei konnte nicht gelesen werden.');
+    }
+  };
 
   return (
     <>
@@ -60,6 +92,45 @@ export function SettingsPage() {
           />
         </label>
         <p className="hint">Nur nötig, wenn in Vercel die Variable APP_ACCESS_CODE gesetzt ist. Sie verhindert, dass Fremde über deine Seite Scans auf deine Kosten auslösen.</p>
+      </section>
+      <section className="panel">
+        <h2>Daten auf diesem iPhone</h2>
+        <div className="row">
+          <span className="row-label">Sammlung</span>
+          <span className="row-value">{collection.items.reduce((n, i) => n + i.qty, 0)} Karten</span>
+        </div>
+        <div className="row">
+          <span className="row-label">Merkliste</span>
+          <span className="row-value">{watch.list.length} Karten</span>
+        </div>
+        <div className="row">
+          <span className="row-label">Als App installiert</span>
+          <span className="row-value">{status ? (status.installed ? '✓ ja' : '✗ nein – im Browser geöffnet') : '…'}</span>
+        </div>
+        <div className="row">
+          <span className="row-label">Dauerhaft gespeichert</span>
+          <span className="row-value">
+            {status ? (status.persisted ? '✓ ja' : 'nein') : '…'}
+            {status && !status.persisted && (
+              <button className="chip" onClick={() => requestPersistence().then(() => storageStatus().then(setStatus))}>
+                Anfordern
+              </button>
+            )}
+          </span>
+        </div>
+        <p className="hint">
+          Deine Daten liegen nur auf diesem Gerät (doppelt gesichert). Wichtig: Safari und die App auf dem Home-Bildschirm haben getrennte
+          Speicher. Nutze immer das App-Symbol. Mach ab und zu ein Backup, z. B. in iCloud Drive über „In Dateien sichern“.
+        </p>
+        <div className="links">
+          <button className="link-btn" onClick={backup}>
+            Backup erstellen
+          </button>
+          <button className="link-btn" onClick={() => importInput.current?.click()}>
+            Backup laden
+          </button>
+          <input ref={importInput} type="file" accept="application/json" hidden onChange={(e) => restore(e.target.files?.[0])} />
+        </div>
       </section>
       <section className="panel">
         <h2>Auf dem iPhone installieren</h2>

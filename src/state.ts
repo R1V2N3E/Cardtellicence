@@ -1,3 +1,4 @@
+import { mirror, requestPersistence } from './storage';
 // Client-side state: settings and watchlist live in this device's localStorage.
 import { useCallback, useEffect, useState } from 'react';
 
@@ -17,11 +18,13 @@ function readList<T>(key: string): T[] {
   }
 }
 function write(key: string, value: unknown) {
+  const raw = JSON.stringify(value);
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, raw);
   } catch {
-    /* private mode: state just doesn't persist */
+    /* private mode or full: the IndexedDB copy below still keeps it */
   }
+  mirror(key, raw);
   window.dispatchEvent(new CustomEvent('ct-storage', { detail: key }));
 }
 
@@ -103,6 +106,8 @@ export interface CollectionItem {
   number: string;
   rarity: string | null;
   image: string | null;
+  photo?: string | null; // full image URL (sealed products, deck cards)
+  kind?: 'card' | 'sealed';
   qty: number;
   condition: Condition;
   /** What was paid per copy, in the currency it was paid in. */
@@ -113,6 +118,7 @@ export interface CollectionItem {
 export function useCollection() {
   const [items, setItems] = useStored<CollectionItem[]>('ct-collection', () => readList<CollectionItem>('ct-collection'));
   const add = (item: Omit<CollectionItem, 'uid' | 'addedAt'>) => {
+    void requestPersistence();
     const cur = readList<CollectionItem>('ct-collection');
     // Same card, condition and cost → just raise the quantity.
     const same = cur.find(
@@ -150,4 +156,5 @@ export function writeAccessCode(code: string) {
   } catch {
     /* ignore */
   }
+  mirror('ct-access-code', code);
 }

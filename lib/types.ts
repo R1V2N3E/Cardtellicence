@@ -105,6 +105,7 @@ export interface CardReport {
   pricecharting: SourceResult<PriceChartingData>;
   fetchedAt: string;
   partial?: boolean; // core only (card + Cardmarket); market sources still loading
+  sell?: { query: string; ebaySold: string; ebayLive: string; kleinanzeigen: string; nameDe: string | null };
 }
 
 /** One row of the daily scanner output (public/data/opportunities.json). */
@@ -129,11 +130,29 @@ export interface Opportunity {
   snkImg?: string | null;
 }
 
+/** A Japanese booster box or pack, priced on Cardmarket (EUR) and SNKRDUNK (JPY). */
+export interface SealedItem {
+  id: string; // "cm-<Cardmarket idProduct>"
+  kind: 'box' | 'pack';
+  setId: string;
+  setName: string; // Japanese set name
+  nameEn: string; // Cardmarket product name
+  cmUrl: string;
+  cmTrend: number | null;
+  cmAvg30: number | null;
+  cmLow: number | null;
+  snkId: number | null;
+  snkAskJpy: number | null;
+  snkLabel: string | null;
+  image: string | null;
+}
+
 export interface OpportunityFile {
   generatedAt: string;
   fx: FxRates;
   sets: { id: string; name: string }[];
   items: Opportunity[];
+  sealed?: SealedItem[];
 }
 
 /** History file per set: cardId -> rows of [yyyy-mm-dd, cmTrend, cmAvg30, yytJpy]. */

@@ -368,3 +368,17 @@ body { letter-spacing: -0.005em; }
 .gallery img { box-shadow: 0 14px 34px rgba(0,0,0,.35); }
 .margin-panel { background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface)); }
 .margin-flow strong { font-size: 23px; }
+
+.sell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sell-btn { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); }
+.sell-btn b { font-size: 15px; }
+.sell-btn span { font-size: 12.5px; color: var(--muted); }
+.sell-btn.primary { background: linear-gradient(160deg, #4f8dff, #2563eb); border-color: transparent; color: #fff; }
+.sell-btn.primary span { color: rgba(255,255,255,.85); }
+
+.deals-seg { margin-top: 0; }
+.sealed-row { width: 100%; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.sealed-thumb, .sealed-head img { object-fit: contain; background: #fff; padding: 4px; }
+.sealed-head { display: flex; gap: 12px; align-items: center; }
+.sealed-head img, .sealed-head .thumb { width: 96px; height: 96px; border-radius: 12px; flex: none; }
+.sheet-h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }

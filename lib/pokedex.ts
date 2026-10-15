@@ -57,3 +57,14 @@ export function englishName(nameJa: string, dexIds: number[] | undefined): strin
   const suffix = SUFFIXES.find((s) => nameJa.endsWith(s));
   return suffix ? `${base} ${suffix}` : base;
 }
+
+/** German display name, e.g. "リザードンex" -> "Glurak ex" (null for trainers). */
+export function germanName(nameJa: string, dexIds: number[] | undefined): string | null {
+  const ids = dexIds?.length ? dexIds : dexFromJa(nameJa);
+  if (!ids.length) return null;
+  const names = ids.map((id) => byId.get(id)?.[2]).filter(Boolean) as string[];
+  if (!names.length) return null;
+  const suffix = SUFFIXES.find((s) => nameJa.endsWith(s));
+  const mega = /^メガ/.test(nameJa) ? 'Mega-' : '';
+  return `${mega}${names.join(' & ')}${suffix ? ` ${suffix}` : ''}`;
+}
