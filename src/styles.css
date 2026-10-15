@@ -382,3 +382,6 @@ body { letter-spacing: -0.005em; }
 .sealed-head { display: flex; gap: 12px; align-items: center; }
 .sealed-head img, .sealed-head .thumb { width: 96px; height: 96px; border-radius: 12px; flex: none; }
 .sheet-h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+
+.crash { display: flex; flex-direction: column; gap: 14px; padding: calc(env(safe-area-inset-top) + 40px) 24px 24px; }
+.crash code { font-size: 12px; color: var(--muted); word-break: break-word; }

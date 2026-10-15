@@ -6,13 +6,26 @@ const DB = 'cardtellicence';
 const STORE = 'kv';
 export const PERSISTED_KEYS = ['ct-collection', 'ct-watch', 'ct-settings', 'ct-portfolio-history', 'ct-access-code'];
 
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+// iOS home-screen apps sometimes never answer indexedDB.open(); never let that block anything.
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+  dbPromise ??= new Promise<IDBDatabase>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('IndexedDB timeout')), 2000);
+    try {
+      const req = indexedDB.open(DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+      req.onsuccess = () => (clearTimeout(timer), resolve(req.result));
+      req.onerror = () => (clearTimeout(timer), reject(req.error));
+    } catch (e) {
+      clearTimeout(timer);
+      reject(e);
+    }
+  }).catch((e) => {
+    dbPromise = null; // try again next time
+    throw e;
   });
+  return dbPromise;
 }
 
 async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
