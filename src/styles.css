@@ -97,9 +97,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   max-width: 760px;
   margin: 0 auto;
   padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 28px) max(16px, env(safe-area-inset-left));
-  animation: page-in 0.28s ease both;
 }
-@keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* Shared press feedback */
 .deal, .grid-card, .pf-tile, .sell-btn, .chip, .seg, .icon-btn, .square-btn, .primary-btn, .link-btn, .tab, .scan-fab, .alt, .round-btn {
@@ -159,6 +157,8 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   box-shadow: var(--glow), 0 0 0 5px var(--bg), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 .scan-fab svg { width: 28px; height: 28px; stroke-width: 2.2; }
+/* Hide the tab bar while a bottom sheet or the image viewer is open, so their buttons are never covered. */
+body:has(.sheet-backdrop, .viewer) .tabbar { display: none; }
 .scan-fab:active { transform: scale(0.93); }
 
 /* ---------- App bar, logo, segmented control ---------- */
@@ -294,7 +294,9 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .stepper span { min-width: 22px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cost-input { display: flex; gap: 8px; align-items: center; }
 .cost-input .input { width: 150px; }
-.sheet .cost-input .input { flex: 1; width: auto; }
+.sheet .cost-input { flex: 1; min-width: 0; max-width: 240px; }
+.sheet .cost-input .input { flex: 1; width: auto; min-width: 0; }
+.cost-input .chip { flex: none; min-width: 44px; }
 .match-head { display: flex; align-items: center; justify-content: center; gap: 10px; }
 .match-head .thumb, .match-photo { width: 132px; height: 184px; object-fit: cover; border-radius: 12px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35); }
 .match-arrow { color: var(--muted); font-size: 22px; }

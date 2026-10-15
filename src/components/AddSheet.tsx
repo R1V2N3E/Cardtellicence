@@ -35,7 +35,8 @@ export function AddSheet({
       number: card.number,
       rarity: card.rarity,
       image: card.image,
-      photo: card.externalImage ?? null, // never the scanned photo itself (too large to store)
+      // A shop photo URL is fine to keep; never the scanned photo itself (a data URL, too large to store).
+      photo: card.externalImage ?? (photo?.startsWith('http') ? photo : null),
       kind: card.id.startsWith('cm-') ? 'sealed' : 'card',
       qty,
       condition,

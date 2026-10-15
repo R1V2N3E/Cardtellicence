@@ -199,7 +199,7 @@ export function CardPage() {
       </section>
       )}
 
-      {adding && <AddSheet card={card} priceEur={r.cardmarket.ok ? r.cardmarket.trend : null} onClose={() => setAdding(false)} />}
+      {adding && <AddSheet card={card} photo={shown[0]} priceEur={r.cardmarket.ok ? r.cardmarket.trend : null} onClose={() => setAdding(false)} />}
 
       {viewer != null && (
         <div className="viewer" onClick={() => setViewer(null)} role="dialog" aria-label="Fotos">
