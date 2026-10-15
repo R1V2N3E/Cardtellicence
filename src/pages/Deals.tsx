@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, loadOpportunities, useAsync } from '../api';
 import { CardLink, Chips, ErrorBox, Header, Spinner, Thumb } from '../components/ui';
 import { ago, fmtEur, fmtJpy, fmtPct, fmtSigned, marginClass, yuyuteiImg } from '../format';
-import { BUY_LABEL, opportunityMargin, SELL_LABEL } from '../margin';
+import { BUY_LABEL, opportunityMargin, reverseMargin, SELL_LABEL } from '../margin';
 import { useSettings } from '../state';
 import { usePullToRefresh, useSwipeTabs } from '../gestures';
 import { SealedSheet, sealedLabel, sealedMargin } from '../components/SealedSheet';
@@ -43,10 +43,10 @@ export function Deals() {
   const [setFilter, setSetFilter] = useState('all');
   const [text, setText] = useState('');
   const [onlyPositive, setOnlyPositive] = useState(true);
-  const [kind, setKind] = useState<'cards' | 'sealed'>('cards');
+  const [kind, setKind] = useState<'cards' | 'sealed' | 'reverse'>('cards');
   const [openSealed, setOpenSealed] = useState<SealedItem | null>(null);
   const { pull, ready } = usePullToRefresh(() => setRefresh((r) => r + 1), !openSealed);
-  useSwipeTabs(['cards', 'sealed'], kind, setKind, !openSealed);
+  useSwipeTabs(['cards', 'sealed', 'reverse'], kind, setKind, !openSealed);
   const resetFilters = () => {
     setOnlyPositive(false);
     setSetFilter('all');
@@ -65,6 +65,20 @@ export function Deals() {
       .sort((a, b) =>
         sort === 'roi' ? (b.m.roi ?? -9) - (a.m.roi ?? -9) : sort === 'value' ? (b.m.sellEur ?? 0) - (a.m.sellEur ?? 0) : (b.m.marginEur ?? -1e9) - (a.m.marginEur ?? -1e9),
       )
+      .slice(0, 200);
+  }, [data, fx, settings, sort, setFilter, text, onlyPositive]);
+
+  // Germany → Japan: buy on Cardmarket, sell to Card Rush's buyback.
+  const reverseRows = useMemo(() => {
+    if (!data) return [];
+    const q = text.trim().toLowerCase();
+    const rate = (fx ?? data.fx).jpyToEur;
+    return data.items
+      .filter((o) => setFilter === 'all' || o.setId === setFilter)
+      .filter((o) => !q || o.nameJa.includes(q) || o.nameEn?.toLowerCase().includes(q) || o.id.toLowerCase().includes(q) || numberMatches(o.number, q))
+      .map((o) => ({ o, r: reverseMargin(o, settings, rate) }))
+      .filter((x): x is { o: typeof x.o; r: NonNullable<typeof x.r> } => !!x.r && (!onlyPositive || x.r.marginEur > 0))
+      .sort((a, b) => (sort === 'roi' ? b.r.roi - a.r.roi : sort === 'value' ? b.r.payoutEur - a.r.payoutEur : b.r.marginEur - a.r.marginEur))
       .slice(0, 200);
   }, [data, fx, settings, sort, setFilter, text, onlyPositive]);
 
@@ -98,7 +112,7 @@ export function Deals() {
         title="Deals"
         sub={
           data
-            ? `Kauf ${settings.buySource === 'mercari' ? 'Günstigster (Mercari nicht im Scan)' : BUY_LABEL[settings.buySource]} → Verkauf ${SELL_LABEL[settings.sellRef]} · Scan ${ago(data.generatedAt)}`
+            ? `Kauf ${settings.buySource === 'mercari' ? 'Günstigster (Mercari nicht im Scan)' : BUY_LABEL[settings.buySource]} → Verkauf ${SELL_LABEL[settings.sellRef]}${settings.net ? ' · netto' : ''} · Scan ${ago(data.generatedAt)}${Date.now() - Date.parse(data.generatedAt) > 30 * 3600_000 ? ' ⚠︎ veraltet' : ''}`
             : 'Margen Japan → Deutschland'
         }
         right={
@@ -118,6 +132,9 @@ export function Deals() {
         </button>
         <button className={kind === 'sealed' ? 'seg on' : 'seg'} onClick={() => setKind('sealed')}>
           Sealed {data?.sealed?.length ? `(${data.sealed.length})` : ''}
+        </button>
+        <button className={kind === 'reverse' ? 'seg on' : 'seg'} onClick={() => setKind('reverse')}>
+          DE → JP
         </button>
       </div>
       <div className="toolbar">
@@ -143,10 +160,67 @@ export function Deals() {
       {error && <ErrorBox message={`Scan konnte nicht geladen werden: ${error}`} />}
       {data && (
         <p className="hint">
-          1 € = {fmtJpy(1 / (fx ?? data.fx).jpyToEur)} (EZB {(fx ?? data.fx).date}) · {kind === 'sealed' ? `${sealedRows.length} Produkte` : `${rows.length} Karten · min. Cardmarket ${fmtEur(settings.minTrend)}`}
+          1 € = {fmtJpy(1 / (fx ?? data.fx).jpyToEur)} (EZB {(fx ?? data.fx).date}) · {kind === 'sealed'
+            ? `${sealedRows.length} Produkte`
+            : kind === 'reverse'
+              ? `${reverseRows.length} Karten`
+              : `${rows.length} Karten · min. Cardmarket ${fmtEur(settings.minTrend)}`}
         </p>
       )}
 
+      {kind === 'reverse' && (
+        <>
+          <p className="filter-note reverse-note">
+            In Deutschland auf Cardmarket kaufen ({SELL_LABEL[settings.sellRef]}) und an Card Rush verkaufen (Ankaufspreis 買取). Card Rush kauft per Post
+            nur mit japanischer Adresse und Ausweis an und zahlt den vollen Preis nur für einwandfreie Karten – praktisch also für Reisen nach Japan
+            oder mit Partner vor Ort.
+          </p>
+          <ul className="list">
+            {reverseRows.map(({ o, r }) => (
+              <li key={o.id}>
+                <CardLink
+                  id={o.id}
+                  className="deal"
+                  preview={{
+                    card: { id: o.id, setId: o.setId, setName: o.setName, localId: o.number.split('/')[0], number: o.number, nameJa: o.nameJa, nameEn: o.nameEn, rarity: o.rarity, image: o.image },
+                    image: yuyuteiImg(o.yytUrl) ?? o.snkImg,
+                    cardmarket: { trend: o.cmTrend, avg30: o.cmAvg30, low: o.cmLow },
+                    fx: fx ?? data?.fx,
+                  }}
+                >
+                  <Thumb id={o.id} image={o.image} fallback={yuyuteiImg(o.yytUrl) ?? o.snkImg} alt={o.nameJa} />
+                  <div className="deal-main">
+                    <div className="deal-name">{o.nameEn ?? o.nameJa}</div>
+                    <div className="deal-meta">
+                      {o.setId} {o.number} {o.rarity && `· ${o.rarity}`}
+                    </div>
+                    <div className="deal-prices">
+                      <span className="jp">
+                        🇩🇪 {fmtEur(r.buyEur)} <small>Cardmarket{settings.net ? ` + ${fmtEur(r.costEur - r.buyEur)} Versand` : ''}</small>
+                      </span>
+                      <span className="de">
+                        🇯🇵 {fmtJpy(o.crBuyJpy)} <small>Card Rush Ankauf ≈ {fmtEur(r.payoutEur)}</small>
+                      </span>
+                    </div>
+                  </div>
+                  <div className={`deal-margin ${marginClass(r.marginEur)}`}>
+                    <strong>{fmtSigned(r.marginEur)}</strong>
+                    <small>{fmtPct(r.roi)}</small>
+                  </div>
+                </CardLink>
+              </li>
+            ))}
+          </ul>
+          {data && !reverseRows.length && (
+            <div className="empty">
+              <p>Gerade keine Karte, die Card Rush teurer ankauft, als sie auf Cardmarket kostet.</p>
+              <button className="link-btn" onClick={resetFilters}>
+                Filter zurücksetzen
+              </button>
+            </div>
+          )}
+        </>
+      )}
       {kind === 'sealed' && (
         <>
           {data && !data.sealed?.length && <p className="empty">Sealed-Daten kommen mit dem nächsten täglichen Scan.</p>}

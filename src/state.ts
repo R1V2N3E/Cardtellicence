@@ -42,6 +42,7 @@ export type BuySource = 'cardrush' | 'cheapest' | 'yuyutei' | 'snkrdunk' | 'merc
 /** What the portfolio is valued at: Card Rush (Japan's reference price) or Cardmarket. */
 export type Valuation = 'cardrush' | 'cardmarket';
 export type SellRef = 'trend' | 'avg30' | 'avg7' | 'low';
+export type SellChannel = 'cardmarket' | 'ebay' | 'ebayPro' | 'kleinanzeigen';
 
 export interface Settings {
   buySource: BuySource;
@@ -50,6 +51,18 @@ export interface Settings {
   includeSoldOut: boolean;
   showJpy: boolean;
   valuation: Valuation;
+  /** Net margins: costs of importing (proxy fee, shipping, duty, import VAT) and of selling. */
+  net: boolean;
+  proxyPct: number;
+  shipEur: number; // per card, Japan → Germany
+  shipSealedEur: number; // per box/pack
+  dutyPct: number;
+  vatPct: number;
+  sellChannel: SellChannel;
+  revShipEur: number; // per card, Germany → Japan (reverse deals)
+  /** Grading calculator */
+  gradingEur: number; // PSA fee + shipping per card
+  psa10Pct: number; // expected chance of a PSA 10
   /** Set once Card Rush became the default; older saved settings are moved over once. */
   cardrushDefaults?: boolean;
 }
@@ -61,6 +74,16 @@ export const DEFAULT_SETTINGS: Settings = {
   includeSoldOut: false,
   showJpy: true,
   valuation: 'cardrush',
+  net: true,
+  proxyPct: 5,
+  shipEur: 3,
+  shipSealedEur: 8,
+  dutyPct: 0,
+  vatPct: 19,
+  sellChannel: 'cardmarket',
+  revShipEur: 4,
+  gradingEur: 40,
+  psa10Pct: 40,
   cardrushDefaults: true,
 };
 
@@ -72,6 +95,7 @@ function loadSettings(): Settings {
 }
 
 export const useSettings = () => useStored<Settings>('ct-settings', loadSettings);
+export const readSettings = loadSettings;
 
 export interface WatchItem {
   id: string;
@@ -85,6 +109,8 @@ export interface WatchItem {
   // Snapshot when last viewed, so the list is useful without refetching.
   last?: { at: string; buyJpy: number | null; buySource: string | null; sellEur: number | null; marginEur: number | null };
 }
+
+export const readWatchlist = () => readList<WatchItem>('ct-watch');
 
 export function useWatchlist() {
   const [list, setList] = useStored<WatchItem[]>('ct-watch', () => readList<WatchItem>('ct-watch'));

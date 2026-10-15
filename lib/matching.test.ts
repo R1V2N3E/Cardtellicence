@@ -135,3 +135,20 @@ describe('deal buy source fallback', () => {
     expect(pickBuy(opts, 'yuyutei', true)?.source).toBe('yuyutei');
   });
 });
+
+describe('net margin', () => {
+  it('adds proxy fee, shipping, duty and import VAT, and takes the sales fee off', () => {
+    const buy = { source: 'cardrush' as const, label: 'Card Rush', jpy: 16000 };
+    // 16000 ¥ at 1/160 = 100 €; +5 % proxy, +3 € shipping, 0 % duty, 19 % VAT on 103 €
+    const m = computeMargin(buy, 200, 1 / 160, { proxyPct: 5, shipEur: 3, dutyPct: 0, vatPct: 19, sellFeePct: 5 });
+    expect(m.landedEur).toBeCloseTo(100 + 5 + 3 + 19.57);
+    expect(m.proceedsEur).toBeCloseTo(190);
+    expect(m.marginEur).toBeCloseTo(190 - 127.57);
+  });
+
+  it('stays gross without a cost model', () => {
+    const m = computeMargin({ source: 'snkrdunk', label: 'SNKRDUNK', jpy: 16000 }, 200, 1 / 160);
+    expect(m.marginEur).toBeCloseTo(100);
+    expect(m.costs).toBeNull();
+  });
+});

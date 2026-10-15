@@ -6,9 +6,10 @@ import { api, useAsync } from '../api';
 import { PriceChart, type Series } from '../components/PriceChart';
 import { Chips, ErrorBox, Header, Spinner } from '../components/ui';
 import { ago, cardImg, fmtEur, fmtJpy, fmtPct, fmtSigned, fmtUsd, marginClass, shortDate } from '../format';
-import { BUY_LABEL, computeMargin, pickBuy, reportBuyOptions, reportSell, SELL_LABEL } from '../margin';
-import { useCollection, useSettings, useWatchlist, type BuySource, type SellRef } from '../state';
+import { BUY_LABEL, CHANNEL, computeMargin, costModel, pickBuy, type Margin, reportBuyOptions, reportSell, SELL_LABEL } from '../margin';
+import { useCollection, useSettings, useWatchlist, type BuySource, type SellChannel, type SellRef, type Settings } from '../state';
 import { AddSheet } from '../components/AddSheet';
+import { CostLines } from '../components/CostLines';
 
 const COLORS = { snk: '#ff9f5a', cm: '#8b7cff', cmAvg: '#b8adff', yyt: '#3ee6a8', pc: '#f472b6', cr: '#ffc24b' };
 type Range = 'oneWeek' | 'oneMonth' | 'threeMonths' | 'all';
@@ -29,8 +30,8 @@ export function CardPage() {
 
   const options = useMemo(() => (r ? reportBuyOptions(r, settings.includeSoldOut) : []), [r, settings.includeSoldOut]);
   const margin = useMemo(
-    () => (r ? computeMargin(pickBuy(options, buySource, !r.partial), reportSell(r, sellRef), r.fx.jpyToEur) : null),
-    [r, options, buySource, sellRef],
+    () => (r ? computeMargin(pickBuy(options, buySource, !r.partial), reportSell(r, sellRef), r.fx.jpyToEur, costModel(settings)) : null),
+    [r, options, buySource, sellRef, settings],
   );
 
   // Keep the watchlist snapshot fresh whenever a watched card is opened.
@@ -139,8 +140,9 @@ export function CardPage() {
             <span className="muted">{SELL_LABEL[sellRef]}</span>
           </div>
         </div>
+        {margin?.costs && <CostLines m={margin} />}
         <div className={`margin-result ${marginClass(margin?.marginEur)}`}>
-          <span>Marge</span>
+          <span>{margin?.costs ? 'Netto-Marge' : 'Marge'}</span>
           <strong>{fmtSigned(margin?.marginEur)}</strong>
           <span>{fmtPct(margin?.roi)} ROI</span>
         </div>
@@ -150,7 +152,11 @@ export function CardPage() {
         <div className="row-scroll">
           <Chips<SellRef> value={sellRef} onChange={setSellRef} options={(Object.keys(SELL_LABEL) as SellRef[]).map((k) => [k, SELL_LABEL[k]])} />
         </div>
-        {fx.jpyToEur > 0 && <p className="hint">Kurs: 1 € = {fmtJpy(1 / fx.jpyToEur)} (EZB {fx.date}). Gebühren, Versand und Einfuhr-USt. nicht enthalten.</p>}
+        {fx.jpyToEur > 0 && (
+          <p className="hint">
+            Kurs: 1 € = {fmtJpy(1 / fx.jpyToEur)} (EZB {fx.date}). {margin?.costs ? 'Kosten laut Einstellungen.' : 'Brutto: Gebühren, Versand und Einfuhr-USt. nicht enthalten.'}
+          </p>
+        )}
         {r.partial && <p className="hint loading-line">Japan-Preise werden geladen…</p>}
       </section>
 
@@ -181,9 +187,10 @@ export function CardPage() {
           <p className="hint">Suche: „{r.sell.query}“. eBay und Kleinanzeigen erlauben kein automatisches Auslesen, daher direkte Links.</p>
         </section>
       )}
+      {margin && <SellCalculator margin={margin} />}
       <Charts r={r} />
       <RecentSales r={r} />
-      <Graded r={r} />
+      <Graded r={r} settings={settings} />
 
       {Object.keys(r.links).length > 0 && (
       <section className="panel">
@@ -435,7 +442,44 @@ function RecentSales({ r }: { r: CardReport }) {
   );
 }
 
-function Graded({ r }: { r: CardReport }) {
+/** What stays after each German sales channel, against what the card cost landed. */
+function SellCalculator({ margin }: { margin: Margin }) {
+  const [price, setPrice] = useState('');
+  const base = margin.sellEur ?? null;
+  const p = Number(price.replace(',', '.')) || base;
+  if (!p) return null;
+  const cost = margin.landedEur;
+  return (
+    <section className="panel">
+      <h2>Verkaufsrechner</h2>
+      <label className="field">
+        Verkaufspreis
+        <span className="num-input">
+          <input className="input" inputMode="decimal" placeholder={base ? base.toFixed(2) : ''} value={price} onChange={(e) => setPrice(e.target.value)} />
+          <span>€</span>
+        </span>
+      </label>
+      {(Object.keys(CHANNEL) as SellChannel[]).map((k) => {
+        const fee = (p * CHANNEL[k].feePct) / 100;
+        const net = p - fee;
+        return (
+          <div className="row" key={k}>
+            <span className="row-label">{CHANNEL[k].label}</span>
+            <span className="row-value">
+              {fmtEur(net)}
+              {cost != null && <small className={net - cost >= 0 ? 'up' : 'down'}>{fmtSigned(net - cost)} Gewinn</small>}
+            </span>
+          </div>
+        );
+      })}
+      <p className="hint">
+        Erlös nach Verkaufsgebühr; Gewinn gegen {cost != null ? `${fmtEur(cost)} Einstand (${margin.buy?.label ?? 'Kauf'}${margin.costs ? ' inkl. Kosten' : ''})` : 'den Kaufpreis'}. Versand zahlt der Käufer.
+      </p>
+    </section>
+  );
+}
+
+function Graded({ r, settings }: { r: CardReport; settings: Settings }) {
   const s = r.snkrdunk.ok ? r.snkrdunk : null;
   const p = r.pricecharting.ok ? r.pricecharting : null;
   if (!s?.psa10MedianJpy && !p) return null;
@@ -460,7 +504,43 @@ function Graded({ r }: { r: CardReport }) {
           <span>{fmtPct((intl10 - jp10) / jp10)}</span>
         </div>
       )}
+      <GradingCalc r={r} settings={settings} jp10={jp10} intl10={intl10} />
       <p className="hint">Cardmarket hat keinen Preisguide für gegradete Karten; eBay-Verkäufe (PriceCharting) dienen als internationale Referenz.</p>
     </section>
+  );
+}
+
+/** Is grading worth it? Expected value of a graded copy against selling it raw. */
+function GradingCalc({ r, settings, jp10, intl10 }: { r: CardReport; settings: Settings; jp10: number | null; intl10: number | null }) {
+  const s = r.snkrdunk.ok ? r.snkrdunk : null;
+  const p = r.pricecharting.ok ? r.pricecharting : null;
+  const raw = (r.cardmarket.ok ? r.cardmarket.trend : null) ?? (p?.ungradedUsd ? p.ungradedUsd * r.fx.usdToEur : null);
+  const psa10 = intl10 ?? jp10;
+  const psa9 = (p?.grade9Usd ? p.grade9Usd * r.fx.usdToEur : null) ?? (s?.psa9MedianJpy ? s.psa9MedianJpy * r.fx.jpyToEur : null) ?? raw;
+  if (!raw || !psa10 || !psa9) return null;
+  const chance = Math.min(100, settings.psa10Pct) / 100;
+  const expected = chance * psa10 + (1 - chance) * psa9 - settings.gradingEur;
+  const gain = expected - raw;
+  return (
+    <>
+      <h2 className="sub-h2">Lohnt sich Grading?</h2>
+      <div className="cost-lines">
+        <div>
+          <span>Roh verkaufen</span>
+          <b>{fmtEur(raw)}</b>
+        </div>
+        <div>
+          <span>
+            Graden: {Math.round(chance * 100)} % × PSA10 {fmtEur(psa10)} + {Math.round((1 - chance) * 100)} % × PSA9 {fmtEur(psa9)} − {fmtEur(settings.gradingEur)}
+          </span>
+          <b>{fmtEur(expected)}</b>
+        </div>
+      </div>
+      <div className={`margin-result ${marginClass(gain)}`}>
+        <span>{gain > 0 ? 'Grading lohnt sich' : 'Lieber roh verkaufen'}</span>
+        <strong>{fmtSigned(gain)}</strong>
+        <span>erwartet</span>
+      </div>
+    </>
   );
 }

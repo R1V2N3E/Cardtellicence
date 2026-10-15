@@ -554,3 +554,21 @@ a.row .row-label::after { content: ' ↗'; color: var(--accent); font-size: 11px
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Net margin breakdown */
+.cost-lines { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.cost-lines div { display: flex; justify-content: space-between; gap: 10px; }
+.cost-lines div + small { margin-bottom: 6px; }
+.cost-lines span { color: var(--muted); }
+.cost-lines small { color: var(--muted); font-size: 11.5px; }
+
+.num-input { display: flex; align-items: center; gap: 6px; flex: none; }
+.num-input .input { width: 84px; text-align: right; padding: 8px 10px; }
+.num-input span { color: var(--muted); width: 14px; }
+.field-col { display: flex; flex-direction: column; gap: 8px; }
+.field-col .chips { flex-wrap: wrap; }
+.reverse-note { display: block; line-height: 1.45; }
+.sub-h2 { margin: 10px 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
+.panel > .chips { flex-wrap: wrap; }
+.panel .toggle { white-space: normal; align-items: flex-start; }
+.panel .toggle input { flex: none; margin-top: 1px; }

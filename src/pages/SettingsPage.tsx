@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { requestPersistence, storageStatus, type StorageStatus } from '../storage';
+import { DEFAULT_PUSH, disablePush, enablePush, pushServerStatus, pushSupport, readPush, usePushLocal, type PushLocal } from '../push';
 import { Chips, Header } from '../components/ui';
-import { BUY_LABEL, SELL_LABEL } from '../margin';
-import { DEFAULT_SETTINGS, readAccessCode, useCollection, useSettings, useWatchlist, writeAccessCode, type BuySource, type SellRef, type Valuation } from '../state';
+import { BUY_LABEL, CHANNEL, SELL_LABEL } from '../margin';
+import { DEFAULT_SETTINGS, readAccessCode, useCollection, useSettings, useWatchlist, writeAccessCode, type BuySource, type SellChannel, type SellRef, type Settings, type Valuation } from '../state';
 
 export function SettingsPage() {
   const [s, setS] = useSettings();
@@ -76,6 +77,43 @@ export function SettingsPage() {
         <p className="hint">
           Trend ist Cardmarkets eigene Preisschätzung. Der 30-Tage-Durchschnitt ist stabiler. „Niedrigster“ ist das günstigste aktuelle Angebot, also das, was du unterbieten müsstest.
         </p>
+      </section>
+      <PushSettings />
+      <section className="panel">
+        <h2>Kosten (Netto-Marge)</h2>
+        <label className="toggle">
+          <input type="checkbox" checked={s.net} onChange={(e) => set('net', e.target.checked)} />
+          Margen netto rechnen (empfohlen)
+        </label>
+        {s.net && (
+          <>
+            <NumberField label="Proxy-/Zahlungsgebühr" unit="%" value={s.proxyPct} onChange={(v) => set('proxyPct', v)} />
+            <NumberField label="Versand JP → DE pro Karte" unit="€" value={s.shipEur} onChange={(v) => set('shipEur', v)} />
+            <NumberField label="Versand pro Box/Pack" unit="€" value={s.shipSealedEur} onChange={(v) => set('shipSealedEur', v)} />
+            <NumberField label="Zoll" unit="%" value={s.dutyPct} onChange={(v) => set('dutyPct', v)} />
+            <NumberField label="Einfuhrumsatzsteuer" unit="%" value={s.vatPct} onChange={(v) => set('vatPct', v)} />
+            <div className="field-col">
+              <span>Verkauf über</span>
+              <Chips<SellChannel>
+                value={s.sellChannel}
+                onChange={(v) => set('sellChannel', v)}
+                options={(Object.keys(CHANNEL) as SellChannel[]).map((k) => [k, CHANNEL[k].label])}
+              />
+            </div>
+            <NumberField label="Versand DE → JP pro Karte (Ankauf-Deals)" unit="€" value={s.revShipEur} onChange={(v) => set('revShipEur', v)} />
+          </>
+        )}
+        <p className="hint">
+          Netto = Verkaufspreis − Verkaufsgebühr − (Kaufpreis + Proxy-Gebühr + Versand + Zoll + 19 % Einfuhrumsatzsteuer). Die Steuer fällt beim
+          Import auf Ware + Versand an; Sammelkarten sind in der Regel zollfrei. Wer vor Ort in Japan kauft und mitbringt: Proxy 0 % und Versand 0 €
+          setzen (Freimenge 430 € bei Flugreisen beachten).
+        </p>
+      </section>
+      <section className="panel">
+        <h2>Grading (PSA)</h2>
+        <NumberField label="Kosten pro Karte inkl. Versand" unit="€" value={s.gradingEur} onChange={(v) => set('gradingEur', v)} />
+        <NumberField label="Erwartete PSA-10-Quote" unit="%" value={s.psa10Pct} onChange={(v) => set('psa10Pct', v)} />
+        <p className="hint">Für den Grading-Rechner auf jeder Kartenseite.</p>
       </section>
       <section className="panel">
         <h2>Deals-Filter</h2>
@@ -164,5 +202,109 @@ export function SettingsPage() {
         </p>
       </section>
     </>
+  );
+}
+
+function NumberField({ label, unit, value, onChange }: { label: string; unit: string; value: number; onChange: (v: Settings[keyof Settings] & number) => void }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  return (
+    <label className="field">
+      {label}
+      <span className="num-input">
+        <input
+          className="input"
+          inputMode="decimal"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => {
+            const v = Number(text.replace(',', '.'));
+            if (Number.isFinite(v) && v >= 0) onChange(v);
+            else setText(String(value));
+          }}
+        />
+        <span>{unit}</span>
+      </span>
+    </label>
+  );
+}
+
+function PushSettings() {
+  const local = usePushLocal();
+  const [prefs, setPrefs] = useState<Omit<PushLocal, 'endpoint'>>(() => {
+    const p = readPush();
+    if (!p) return DEFAULT_PUSH;
+    const { endpoint: _e, ...rest } = p;
+    return rest;
+  });
+  const [server, setServer] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const support = pushSupport();
+  useEffect(() => {
+    pushServerStatus()
+      .then((s) => setServer(!!s.configured))
+      .catch(() => setServer(false));
+  }, []);
+
+  const update = (p: Omit<PushLocal, 'endpoint'>) => {
+    setPrefs(p);
+    // Already on: store locally; the app syncs the server copy in the background.
+    if (local) {
+      localStorage.setItem('ct-push', JSON.stringify({ ...p, endpoint: local.endpoint }));
+      window.dispatchEvent(new CustomEvent('ct-storage', { detail: 'ct-push' }));
+    }
+  };
+  const toggle = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      if (local) await disablePush();
+      else {
+        await enablePush(prefs);
+        setMsg('Aktiv ✓ – eine Testmitteilung ist unterwegs.');
+      }
+    } catch (e) {
+      const m = (e as Error).message;
+      setMsg(m === 'not_configured' ? 'Der Server ist noch nicht eingerichtet (siehe unten).' : m);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel">
+      <h2>Benachrichtigungen</h2>
+      {support === 'not-installed' && <p className="hint">Nur in der Home-Bildschirm-App möglich: in Safari „Teilen → Zum Home-Bildschirm“, dann von dort öffnen.</p>}
+      {support === 'unsupported' && <p className="hint">Dieses Gerät unterstützt keine Web-Mitteilungen (iOS 16.4 oder neuer nötig).</p>}
+      {support === 'ok' && (
+        <>
+          <button className={local ? 'link-btn' : 'primary-btn'} disabled={busy || server === false} onClick={toggle}>
+            {busy ? '…' : local ? 'Benachrichtigungen ausschalten' : 'Benachrichtigungen einschalten'}
+          </button>
+          {msg && <p className="hint">{msg}</p>}
+        </>
+      )}
+      <label className="toggle">
+        <input type="checkbox" checked={prefs.deals} onChange={(e) => update({ ...prefs, deals: e.target.checked })} />
+        Neue Deals ab
+      </label>
+      <NumberField label="Mindest-Marge (netto)" unit="€" value={prefs.minMarginEur} onChange={(v) => update({ ...prefs, minMarginEur: v })} />
+      <label className="toggle">
+        <input type="checkbox" checked={prefs.restock} onChange={(e) => update({ ...prefs, restock: e.target.checked })} />
+        Merkliste: wieder auf Lager bei Card Rush
+      </label>
+      <label className="toggle">
+        <input type="checkbox" checked={prefs.priceDrop} onChange={(e) => update({ ...prefs, priceDrop: e.target.checked })} />
+        Merkliste: Preis bei Card Rush um 5 % gefallen
+      </label>
+      {server === false && (
+        <p className="hint">
+          Einrichtung (einmalig, kostenlos): Vercel → Projekt → Storage → „Create Database“ → Upstash Redis (Free) → mit dem Projekt verbinden → Redeploy.
+          Danach hier einschalten. Schlüssel und Abos legt die App selbst an.
+        </p>
+      )}
+      <p className="hint">Neue Deals kommen nach dem täglichen Scan, Merkliste-Meldungen bis zu stündlich.</p>
+    </section>
   );
 }

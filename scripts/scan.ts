@@ -8,7 +8,7 @@
 //   public/data/opportunities.json   (what the Deals screen shows)
 //   public/data/history/<set>.json   (daily price snapshots for the charts)
 //
-// Env: SCAN_SETS="SV2a,SV8a" to limit sets, SCAN_ALL=1 to include non-secret-rare cards.
+// Env: SCAN_SETS="SV2a,SV8a" to limit sets, SCAN_SECRET_ONLY=1 for a quick run over secret rares only.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cardrushSealed, cardrushSet, type CardRushPrice } from '../lib/cardrush.js';
 import { getFx } from '../lib/fx.js';
@@ -21,16 +21,13 @@ import { getRawCard, getSet, listSets, toSummary } from '../lib/tcgdex.js';
 import type { HistoryFile, Opportunity, OpportunityFile } from '../lib/types.js';
 import { getYuyuteiSet } from '../lib/yuyutei.js';
 
-const DEFAULT_SETS = [
-  // Mega era
-  'M1L', 'M1S', 'M2', 'M2a', 'M3', 'M4', 'M5', 'M6',
-  // Scarlet & Violet
-  'SV1S', 'SV1V', 'SV1a', 'SV2P', 'SV2D', 'SV2a', 'SV3', 'SV3a', 'SV4K', 'SV4M', 'SV4a', 'SV5K', 'SV5M', 'SV5a',
-  'SV6', 'SV6a', 'SV7', 'SV7a', 'SV8', 'SV8a', 'SV9', 'SV9a', 'SV10', 'SV11B', 'SV11W',
-  // Sword & Shield / Sun & Moon chase sets
-  // (S6a Eevee Heroes, S4a Shiny Star V, S10b have no card list in TCGdex yet.)
-  'S12a', 'S11a', 'S8b', 'SM12a', 'SM11b', 'SM8b',
-];
+/**
+ * Every main Japanese set from Sun & Moon on (Sun & Moon, Sword & Shield, Scarlet & Violet,
+ * Mega): booster, high-class and strengthening packs. Promos, starter decks and the special
+ * collections are left out (no Cardmarket expansion to price them against).
+ */
+const SCANNED_SET = /^(SM\d+[A-Za-z+]*|S\d+[A-Za-z]*|SV\d+[A-Za-z]*|M\d+[A-Za-z]*)$/i;
+const EXCLUDED_SET = /^(SM0|SMP\d*|SM\d+p|SV-P|M-P|SVL|SVK|S8a)/i;
 const MIN_TREND_EUR = 3;
 const SNK_MIN_EUR = 5;
 const SNK_MAX = 900;
@@ -68,8 +65,10 @@ async function scanSet(setId: string, all: boolean): Promise<Opportunity[]> {
   const official = set.cardCount.official;
   // Secret rares (numbered above the official count) carry nearly all the value. Sets
   // without secret numbering (e.g. SV11B) are scanned in full.
+  // All cards; SCAN_SECRET_ONLY=1 limits a quick run to the secret rares (numbered above the
+  // official count), which carry most of the value.
   const secret = set.cards.filter((c) => !/^\d+$/.test(c.localId) || Number(c.localId) > official);
-  const candidates = all || !secret.length ? set.cards : secret;
+  const candidates = all || !secret.length || process.env.SCAN_SECRET_ONLY !== '1' ? set.cards : secret;
   const [cr, yyt, raws] = await Promise.all([
     cardrushForScan(setId).catch((e) => {
       log(`  card rush ${setId}: ${e.message}`);
@@ -138,8 +137,10 @@ function writeHistory(items: Opportunity[]) {
 
 async function main() {
   const all = process.env.SCAN_ALL === '1';
-  const known = new Set((await listSets()).map((s) => s.id));
-  const wanted = (process.env.SCAN_SETS ? process.env.SCAN_SETS.split(',') : DEFAULT_SETS).map((s) => s.trim()).filter(Boolean);
+  const allSets = (await listSets()).map((s) => s.id);
+  const known = new Set(allSets);
+  const defaults = allSets.filter((id) => SCANNED_SET.test(id) && !EXCLUDED_SET.test(id));
+  const wanted = (process.env.SCAN_SETS ? process.env.SCAN_SETS.split(',') : defaults).map((s) => s.trim()).filter(Boolean);
   const sets = wanted.filter((s) => known.has(s));
   const fx = await getFx();
   log(`scanning ${sets.length} sets, 1 JPY = ${fx.jpyToEur.toFixed(5)} EUR (${fx.date})`);

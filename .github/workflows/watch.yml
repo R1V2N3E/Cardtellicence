@@ -1,0 +1,33 @@
+name: Watch
+
+# Hourly: send due notifications (watchlist restocks and price drops at Card Rush) and
+# re-trigger the daily scan if it was missed.
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: public/data/opportunities.json
+          sparse-checkout-cone-mode: false
+      - name: Re-run a missed daily scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          age=$(node -e "const d=require('./public/data/opportunities.json');console.log(Math.round((Date.now()-Date.parse(d.generatedAt))/3600000))")
+          echo "data is ${age}h old"
+          running=$(gh run list --workflow scan.yml --status in_progress --json databaseId --jq length)
+          if [ "$age" -ge 26 ] && [ "$running" = "0" ]; then gh workflow run scan.yml --ref "${GITHUB_REF_NAME}"; echo "scan triggered"; fi
+      - name: Send due notifications
+        continue-on-error: true
+        run: curl -fsS -X POST "https://cardtellicence.vercel.app/api/push?action=check" || true

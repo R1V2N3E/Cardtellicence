@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react';
 import type { FxRates, SealedItem } from '../../lib/types';
 import { api, useAsync } from '../api';
 import { fmtEur, fmtJpy, fmtPct, fmtSigned, marginClass } from '../format';
-import { computeMargin, pickBuy, sealedBuyOptions } from '../margin';
+import { computeMargin, costModel, pickBuy, sealedBuyOptions } from '../margin';
 import type { Settings, SellRef } from '../state';
 import { AddSheet } from './AddSheet';
+import { CostLines } from './CostLines';
 import { PriceChart } from './PriceChart';
 import { Chips } from './ui';
 
@@ -15,7 +16,7 @@ export function sealedSell(s: SealedItem, ref: SellRef) {
 }
 
 export function sealedMargin(s: SealedItem, settings: Settings, fx: FxRates) {
-  return computeMargin(pickBuy(sealedBuyOptions(s, settings.includeSoldOut), settings.buySource, true), sealedSell(s, settings.sellRef), fx.jpyToEur);
+  return computeMargin(pickBuy(sealedBuyOptions(s, settings.includeSoldOut), settings.buySource, true), sealedSell(s, settings.sellRef), fx.jpyToEur, costModel(settings, true));
 }
 
 type Range = 'oneMonth' | 'threeMonths' | 'all';
@@ -80,8 +81,9 @@ export function SealedSheet({ item, fx, settings, onClose }: { item: SealedItem;
             <span className="muted">30T-Ø {fmtEur(item.cmAvg30)} · min. {fmtEur(item.cmLow)}</span>
           </div>
         </div>
+        {m.costs && <CostLines m={m} />}
         <div className={`margin-result ${marginClass(m.marginEur)}`}>
-          <span>Marge</span>
+          <span>{m.costs ? 'Netto-Marge' : 'Marge'}</span>
           <strong>{fmtSigned(m.marginEur)}</strong>
           <span>{fmtPct(m.roi)} ROI</span>
         </div>
@@ -117,7 +119,7 @@ export function SealedSheet({ item, fx, settings, onClose }: { item: SealedItem;
         <button className="primary-btn" onClick={() => setAdding(true)}>
           + Zur Sammlung
         </button>
-        <p className="hint">Cardmarket = offizieller Preisguide der japanischen Ausgabe. Gebühren, Versand und Einfuhr-USt. nicht enthalten.</p>
+        <p className="hint">Cardmarket = offizieller Preisguide der japanischen Ausgabe. {m.costs ? 'Netto: Kosten laut Einstellungen.' : 'Brutto: Gebühren, Versand und Einfuhr-USt. nicht enthalten.'}</p>
       </div>
     </div>
   );

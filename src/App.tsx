@@ -6,6 +6,7 @@ import { Scan } from './pages/Scan';
 import { Search } from './pages/Search';
 import { SettingsPage } from './pages/SettingsPage';
 import { Watchlist } from './pages/Watchlist';
+import { usePushSync } from './push';
 
 const TABS = [
   { to: '/', label: 'Deals', icon: 'M3 17l6-6 4 4 8-8M21 7v6M21 7h-6' },
@@ -27,6 +28,7 @@ function Tab({ to, label, icon }: (typeof TABS)[number]) {
 
 export function App() {
   const { pathname } = useLocation();
+  usePushSync();
   if (pathname === '/scan') return <Scan />;
   return (
     <div className="app">

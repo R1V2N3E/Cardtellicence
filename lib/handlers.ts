@@ -250,3 +250,37 @@ export async function cardrushHandler(req: Request) {
     return fail(e);
   }
 }
+
+/**
+ * Push notifications:
+ *   GET  ?action=key          → { configured, publicKey }
+ *   POST ?action=subscribe    { subscription, prefs }  (also updates preferences)
+ *   POST ?action=unsubscribe  { endpoint }
+ *   POST ?action=check        send what is new (called by the scan and the hourly watch job)
+ */
+export async function pushHandler(req: Request) {
+  const url = new URL(req.url);
+  const action = url.searchParams.get('action');
+  const push = await import('./push.js');
+  if (!push.pushConfigured()) return json({ configured: false }, 0, action === 'key' ? 200 : 501);
+  try {
+    if (req.method === 'GET' && action === 'key') return json({ configured: true, publicKey: await push.publicKey() }, 0);
+    if (req.method !== 'POST') return fail('method', 405);
+    if (action === 'check') return json(await push.check(url.origin), 0);
+    // Changing subscriptions needs the access code when one is set.
+    const code = process.env.APP_ACCESS_CODE;
+    if (code && req.headers.get('x-access-code') !== code) return json({ error: 'access_code' }, 0, 401);
+    const body = await req.json().catch(() => null);
+    if (action === 'subscribe' && body?.subscription?.endpoint && body?.prefs) {
+      await push.subscribe(body.subscription, body.prefs, url.origin);
+      return json({ ok: true }, 0);
+    }
+    if (action === 'unsubscribe' && body?.endpoint) {
+      await push.unsubscribe(body.endpoint);
+      return json({ ok: true }, 0);
+    }
+    return fail('bad request', 400);
+  } catch (e) {
+    return fail(e);
+  }
+}

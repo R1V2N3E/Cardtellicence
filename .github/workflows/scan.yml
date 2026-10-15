@@ -2,8 +2,12 @@ name: Daily price scan
 
 on:
   schedule:
-    # 03:17 UTC daily — after Cardmarket publishes its price guide (~02:00 CET).
+    # GitHub may drop scheduled runs under load, so there are two slots; the second one
+    # skips itself when the first already ran. (The hourly "Watch" workflow also re-triggers
+    # a scan when the data is older than a day.)
+    # 03:17 UTC — after Cardmarket publishes its price guide (~02:45 CET).
     - cron: '17 3 * * *'
+    - cron: '47 5 * * *'
   workflow_dispatch:
     inputs:
       sets:
@@ -20,23 +24,41 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - name: Skip if today's scan already ran
+        id: fresh
+        run: |
+          last=$(node -e "try{console.log(require('./public/data/opportunities.json').generatedAt.slice(0,10))}catch{console.log('')}")
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$last" = "$(date -u +%Y-%m-%d)" ]; then
+            echo "Already scanned today ($last)"; echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v4
+        if: steps.fresh.outputs.skip != '1'
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+        if: steps.fresh.outputs.skip != '1'
       - name: Scan Japanese sets
+        if: steps.fresh.outputs.skip != '1'
         run: npm run scan
         env:
           SCAN_SETS: ${{ inputs.sets }}
       - name: Commit data
+        if: steps.fresh.outputs.skip != '1'
         run: |
           git config user.name "cardtelligence-bot"
           git config user.email "cardtelligence-bot@users.noreply.github.com"
           git add public/data
           if git diff --cached --quiet; then echo "No changes"; exit 0; fi
           git commit -m "data: daily scan $(date -u +%Y-%m-%d)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
+      - name: Send notifications for new deals
+        if: steps.fresh.outputs.skip != '1'
+        continue-on-error: true
+        run: |
+          sleep 90  # let Vercel deploy the new data first
+          curl -fsS -X POST "https://cardtellicence.vercel.app/api/push?action=check" || true
