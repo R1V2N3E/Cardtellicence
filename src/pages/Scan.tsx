@@ -7,14 +7,14 @@ import { api, ApiError, type LivePrice } from '../api';
 import { AddSheet } from '../components/AddSheet';
 import { Logo } from '../components/Logo';
 import { Spinner, Thumb } from '../components/ui';
-import { fmtEur } from '../format';
+import { cardImg, fmtEur } from '../format';
 
 const CARD_RATIO = 88 / 63; // height / width of a trading card
 const MAX_EDGE = 1280; // enough for the small print (set code, number) once cropped to the card; smaller uploads faster
 
 type Phase =
   | { kind: 'camera' }
-  | { kind: 'working'; photo: string; events: IdentifyProgress[]; finished: boolean }
+  | { kind: 'working'; photo: string; events: IdentifyProgress[]; finished: boolean; resultImage?: string | null }
   | { kind: 'result'; photo: string; result: IdentifyResult }
   | { kind: 'manual'; photo: string | null; reason: string }
   | { kind: 'error'; photo: string | null; message: string };
@@ -106,9 +106,18 @@ export function Scan() {
     setPhase({ kind: 'working', photo, events: [], finished: false });
     try {
       const result = await api.identify(photo, (e) => setPhase((p) => (p.kind === 'working' ? { ...p, events: [...p.events, e] } : p)));
-      // A short lock-on moment before the result, so the finish is visible.
-      setPhase((p) => (p.kind === 'working' ? { ...p, finished: true } : p));
-      await new Promise((r) => setTimeout(r, 750));
+      // Finish: the photo morphs into the recognised card. Load its picture first (briefly).
+      const m = result.matches[0];
+      const resultImage = m ? (cardImg(m.image, 'high') ?? m.externalImage ?? `/api/img?id=${encodeURIComponent(m.id)}&size=high`) : null;
+      if (resultImage)
+        await new Promise<void>((done) => {
+          const img = new Image();
+          img.onload = img.onerror = () => done();
+          img.src = resultImage;
+          setTimeout(done, 1500);
+        });
+      setPhase((p) => (p.kind === 'working' ? { ...p, finished: true, resultImage } : p));
+      await new Promise((r) => setTimeout(r, resultImage ? 2400 : 800));
       if (!result.matches.length) {
         const read = [result.reading.set_code, result.reading.number, result.reading.name].filter(Boolean).join(' · ');
         return setPhase({ kind: 'manual', photo, reason: `${read ? `Gelesen: ${read}. ` : ''}${result.note ?? 'Keine passende Karte gefunden.'}` });
@@ -204,7 +213,7 @@ export function Scan() {
         <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (fromLibrary(e.target.files?.[0]), (e.target.value = ''))} />
       </div>
 
-      {phase.kind === 'working' && <ScanAnimation photo={phase.photo} events={phase.events} finished={phase.finished} />}
+      {phase.kind === 'working' && <ScanAnimation photo={phase.photo} events={phase.events} finished={phase.finished} resultImage={phase.resultImage} />}
       {phase.kind === 'result' && (
         <ResultSheet
           photo={phase.photo}

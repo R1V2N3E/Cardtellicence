@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CardReading, IdentifyProgress } from '../../lib/identify';
 
 type Stage = 'upload' | 'reading' | 'searching' | 'verifying' | 'done';
@@ -57,6 +57,68 @@ function Noise({ n }: { n: number }) {
   return <span className="sa-noise">{s}</span>;
 }
 
+/**
+ * The card's motion, driven per frame without re-rendering React: a slow floating sway, a finger
+ * drag that springs back, and on success one smooth full turn while the photo morphs into the
+ * recognised card.
+ */
+function useCardMotion(finished: boolean) {
+  const el = useRef<HTMLDivElement>(null);
+  const drag = useRef({ active: false, x0: 0, y0: 0, dx: 0, dy: 0, vx: 0, vy: 0 });
+  const spinFrom = useRef<number | null>(null);
+  useEffect(() => {
+    if (finished && spinFrom.current == null) spinFrom.current = performance.now();
+  }, [finished]);
+  useEffect(() => {
+    let raf = 0;
+    const t0 = performance.now();
+    const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+    const frame = (now: number) => {
+      const t = (now - t0) / 1000;
+      const d = drag.current;
+      if (!d.active) {
+        // Spring back to rest.
+        d.vx = (d.vx - d.dx * 0.06) * 0.86;
+        d.vy = (d.vy - d.dy * 0.06) * 0.86;
+        d.dx += d.vx;
+        d.dy += d.vy;
+      }
+      const spin = spinFrom.current == null ? 0 : ease(Math.min(1, (now - spinFrom.current) / 1800)) * 360;
+      const calm = spinFrom.current == null ? 1 : Math.max(0, 1 - (now - spinFrom.current) / 900);
+      const ry = Math.sin(t * 0.9) * 20 * calm + d.dx * 0.35 + spin;
+      const rx = Math.sin(t * 0.7 + 1) * 8 * calm - d.dy * 0.3;
+      const y = Math.sin(t * 1.3) * 9 * calm;
+      if (el.current) {
+        el.current.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+        // Light follows the angle: moves the holo foil and the glare.
+        el.current.style.setProperty('--tilt', String(((ry % 360) + 360) % 360 / 360));
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const handlers = {
+    onPointerDown: (e: React.PointerEvent) => {
+      const d = drag.current;
+      d.active = true;
+      d.x0 = e.clientX - d.dx;
+      d.y0 = e.clientY - d.dy;
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const d = drag.current;
+      if (!d.active) return;
+      d.dx = e.clientX - d.x0;
+      d.dy = e.clientY - d.y0;
+    },
+    onPointerUp: () => {
+      drag.current.active = false;
+    },
+  };
+  return { el, handlers };
+}
+
 const PARTICLES = Array.from({ length: 18 }, (_, i) => ({
   r: 150 + (i % 6) * 18,
   d: 5 + (i % 5) * 1.7,
@@ -65,7 +127,19 @@ const PARTICLES = Array.from({ length: 18 }, (_, i) => ({
   hue: [265, 190, 300, 170][i % 4],
 }));
 
-export function ScanAnimation({ photo, events, finished }: { photo: string; events: IdentifyProgress[]; finished: boolean }) {
+export function ScanAnimation({
+  photo,
+  events,
+  finished,
+  resultImage,
+}: {
+  photo: string;
+  events: IdentifyProgress[];
+  finished: boolean;
+  /** Artwork of the recognised card: the photo morphs into it at the end. */
+  resultImage?: string | null;
+}) {
+  const { el, handlers } = useCardMotion(finished);
   const stage = stageOf(events, finished);
   const reading = useMemo(() => (events.find((e) => e.stage === 'read') as { reading: CardReading } | undefined)?.reading ?? null, [events]);
   const candidates = useMemo(
@@ -121,23 +195,37 @@ export function ScanAnimation({ photo, events, finished }: { photo: string; even
             />
           ))}
         </div>
-        <div className="sa-card-wrap">
-          <div className="sa-card">
-            <img src={photo} alt="" />
-            <div className="sa-holo" />
-            <div className="sa-glare" />
-            <div className="sa-mesh" />
-            <div className="sa-laser" />
-            <div className="sa-scanned" />
-            {['tl', 'tr', 'bl', 'br'].map((c) => (
-              <span key={c} className={`sa-corner ${c}`} />
-            ))}
-            {reading && (
-              <>
-                <span className="sa-tag sa-tag-name">NAME</span>
-                <span className="sa-tag sa-tag-num">{reading.set_code ?? 'SET'} · {reading.number ?? 'NR'}</span>
-              </>
-            )}
+        <div className="sa-ring3d" aria-hidden="true">
+          <span />
+          <span />
+        </div>
+        <div className="sa-card-wrap" {...handlers}>
+          <div className="sa-card3d" ref={el}>
+            <div className="sa-face front">
+              <img className="sa-photo" src={photo} alt="" />
+              {resultImage && <img className="sa-result" src={resultImage} alt="" />}
+              {resultImage && <span className="sa-morph-ring" />}
+              <div className="sa-holo" />
+              <div className="sa-glare" />
+              <div className="sa-mesh" />
+              <div className="sa-laser" />
+              <div className="sa-scanned" />
+              {['tl', 'tr', 'bl', 'br'].map((c) => (
+                <span key={c} className={`sa-corner ${c}`} />
+              ))}
+              {reading && !finished && (
+                <>
+                  <span className="sa-tag sa-tag-name">NAME</span>
+                  <span className="sa-tag sa-tag-num">
+                    {reading.set_code ?? 'SET'} · {reading.number ?? 'NR'}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="sa-edge" />
+            <div className="sa-face back">
+              {resultImage ? <img src={resultImage} alt="" /> : <div className="sa-back-pattern" />}
+            </div>
           </div>
           <div className="sa-shadow" />
         </div>
