@@ -1,5 +1,5 @@
 // Web-standard request handlers shared by the Vercel functions (api/*.ts) and the Vite dev server.
-import { cardrushSet } from './cardrush.js';
+import { cardrushSealed, cardrushSet, findCardrush, type CardRushPrice } from './cardrush.js';
 import { getFx } from './fx.js';
 import { findPriceCharting } from './pricecharting.js';
 import { buildReport } from './report.js';
@@ -168,36 +168,68 @@ export async function identifyHandler(req: Request) {
 
 /** GET ?ids=SV2a-201,M2-110 → current Cardmarket prices (official price guide) per card. */
 export async function pricesHandler(req: Request) {
+  const origin = new URL(req.url).origin;
   const ids = (new URL(req.url).searchParams.get('ids') ?? '').split(',').filter((id) => CARD_ID.test(id)).slice(0, 150);
   try {
     const fx = await getFx().catch(() => null);
     const entries = await mapLimit(ids, 8, async (id) => {
       if (id.startsWith('cm-')) {
-        const cm = await sealedPrices(id).catch(() => null);
-        return [id, cm && { trend: cm.trend, avg1: cm.avg1, avg7: cm.avg7, avg30: cm.avg30, low: cm.low, updated: cm.updated, source: 'cardmarket' }] as const;
+        // Card Rush lists sealed products by set name; the daily scan knows set and kind of each product.
+        const scan = await cached('scan-file', 10 * 60_000, () => getJson<OpportunityFile>(`${origin}/data/opportunities.json`)).catch(() => null);
+        const item = scan?.sealed?.find((s) => s.id === id);
+        const [cm, crSealed] = await Promise.all([
+          sealedPrices(id).catch(() => null),
+          item ? cardrushSealed(item.setName).catch(() => null) : null,
+        ]);
+        const cr = crSealed && item ? crSealed[item.kind] : null;
+        if (!cm && !cr) return [id, null] as const;
+        return [
+          id,
+          { trend: cm?.trend ?? null, avg1: cm?.avg1 ?? null, avg7: cm?.avg7 ?? null, avg30: cm?.avg30 ?? null, low: cm?.low ?? null, updated: cm?.updated ?? null, source: 'cardmarket', cr: liveCr(cr) },
+        ] as const;
       }
       if (isExternalId(id)) {
+        const card = await getExternalCard(id).catch(() => null);
+        const cr = card ? await findCardrush(card.setId, card.number).catch(() => null) : null;
         // No Cardmarket product: value at SNKRDUNK's recent sold price (else lowest ask), in EUR.
         const snk = await getSnkrdunk(externalSnkId(id)).catch(() => null);
         let jpy = snk?.rawMedianJpy ?? snk?.lowestAskJpy ?? null;
-        if (jpy == null) {
+        if (jpy == null && !cr) {
           // Cheap deck cards often have no SNKRDUNK market: use Mercari's recent sold median.
-          const card = await getExternalCard(id).catch(() => null);
           const merc = card ? await searchMercari(`${card.nameJa} ${card.number}`, [card.number.split('/')[0]]).catch(() => null) : null;
           jpy = merc?.soldMedianJpy ?? null;
         }
         const eur = jpy != null && fx ? Math.round(jpy * fx.jpyToEur * 100) / 100 : null;
-        return [id, eur != null ? { trend: eur, avg1: null, avg7: null, avg30: null, low: null, updated: null, source: 'japan' } : null] as const;
+        if (eur == null && !cr) return [id, null] as const;
+        return [id, { trend: eur, avg1: null, avg7: null, avg30: null, low: null, updated: null, source: 'japan', cr: liveCr(cr) }] as const;
       }
       const raw = await getRawCard(id).catch(() => null);
-      const cm = raw ? await cardmarketFor(raw).catch(() => null) : null;
-      return [id, cm && { trend: cm.trend, avg1: cm.avg1, avg7: cm.avg7, avg30: cm.avg30, low: cm.low, updated: cm.updated, source: 'cardmarket' }] as const;
+      if (!raw) return [id, null] as const;
+      const number = formatNumber(raw.localId, printedTotal(raw.set.id, raw.set.cardCount?.official));
+      const [cm, cr] = await Promise.all([cardmarketFor(raw).catch(() => null), findCardrush(raw.set.id, number).catch(() => null)]);
+      if (!cm && !cr) return [id, null] as const;
+      return [
+        id,
+        {
+          trend: cm?.trend ?? null,
+          avg1: cm?.avg1 ?? null,
+          avg7: cm?.avg7 ?? null,
+          avg30: cm?.avg30 ?? null,
+          low: cm?.low ?? null,
+          updated: cm?.updated ?? null,
+          source: 'cardmarket',
+          cr: liveCr(cr),
+        },
+      ] as const;
     });
     return json({ prices: Object.fromEntries(entries), fetchedAt: new Date().toISOString() }, 600);
   } catch (e) {
     return fail(e);
   }
 }
+
+/** The part of a Card Rush price the portfolio needs. */
+const liveCr = (p: CardRushPrice | null) => p && { jpy: p.priceJpy, stock: p.stock, buyJpy: p.buyJpy, url: p.url, updatedAt: p.updatedAt };
 
 /** Card Rush prices of one set (?set=SV2a), or one card (&number=201/165). */
 export async function cardrushHandler(req: Request) {

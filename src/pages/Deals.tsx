@@ -75,7 +75,7 @@ export function Deals() {
     return data.sealed
       .filter((x) => setFilter === 'all' || x.setId === setFilter)
       .filter((x) => !q || x.nameEn.toLowerCase().includes(q) || x.setName.includes(q) || x.setId.toLowerCase().includes(q))
-      .map((x) => ({ x, m: sealedMargin(x, settings.sellRef, rate) }))
+      .map((x) => ({ x, m: sealedMargin(x, settings, rate) }))
       .filter(({ m }) => !onlyPositive || (m.marginEur ?? 0) > 0)
       .sort((a, b) =>
         sort === 'roi' ? (b.m.roi ?? -9) - (a.m.roi ?? -9) : sort === 'value' ? (b.m.sellEur ?? 0) - (a.m.sellEur ?? 0) : (b.m.marginEur ?? -1e9) - (a.m.marginEur ?? -1e9),
@@ -170,7 +170,7 @@ export function Deals() {
                     </div>
                     <div className="deal-prices">
                       <span className="jp">
-                        🇯🇵 {fmtJpy(x.snkAskJpy)} <small>SNKRDUNK</small>
+                        🇯🇵 {fmtJpy(m.buy?.jpy)} <small>{m.buy?.label ?? '–'}{m.buy?.note ? ` (${m.buy.note})` : ''}</small>
                       </span>
                       <span className="de">🇩🇪 {fmtEur(m.sellEur)}</span>
                     </div>
@@ -185,7 +185,7 @@ export function Deals() {
           </ul>
         </>
       )}
-      {openSealed && data && <SealedSheet item={openSealed} fx={fx ?? data.fx} sellRef={settings.sellRef} onClose={() => setOpenSealed(null)} />}
+      {openSealed && data && <SealedSheet item={openSealed} fx={fx ?? data.fx} settings={settings} onClose={() => setOpenSealed(null)} />}
 
       {kind === 'cards' && (
       <ul className="list">

@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import type { HistoryFile } from "../../lib/types";
-import { api, type LivePrice } from "../api";
-import { fmtSigned } from "../format";
-import type { CollectionItem } from "../state";
-import { PriceChart, type Series } from "./PriceChart";
-import { Chips } from "./ui";
+import { useEffect, useMemo, useState } from 'react';
+import type { HistoryFile } from '../../lib/types';
+import { api, type LivePrice } from '../api';
+import { fmtSigned } from '../format';
+import type { CollectionItem, Valuation } from '../state';
+import { PriceChart, type Series } from './PriceChart';
+import { Chips } from './ui';
 
-type Range = "1" | "7" | "30" | "all";
+type Range = '1' | '7' | '30' | 'all';
 const DAY = 86400_000;
 
 /**
@@ -23,25 +23,26 @@ export function PortfolioChart({
   factor,
   snapshots,
   ticks,
+  valuation,
+  jpyToEur,
 }: {
   items: CollectionItem[];
   prices: Record<string, LivePrice | null>;
   factor: (i: CollectionItem) => number;
   snapshots: [string, number][];
   ticks: [number, number][];
+  valuation: Valuation;
+  jpyToEur: number | null;
 }) {
-  const [range, setRange] = useState<Range>("30");
+  const [range, setRange] = useState<Range>('30');
   const [histories, setHistories] = useState<Record<string, HistoryFile>>({});
-  const setIds = useMemo(
-    () => [...new Set(items.map((i) => i.setId))].sort().join(","),
-    [items],
-  );
+  const setIds = useMemo(() => [...new Set(items.map((i) => i.setId))].sort().join(','), [items]);
 
   useEffect(() => {
     let alive = true;
     Promise.all(
       setIds
-        .split(",")
+        .split(',')
         .filter(Boolean)
         .map(async (s) => [s, await api.history(s)] as const),
     ).then((entries) => alive && setHistories(Object.fromEntries(entries)));
@@ -50,6 +51,7 @@ export function PortfolioChart({
     };
   }, [setIds]);
 
+  const cr = valuation === 'cardrush';
   const { series, delta7, delta24 } = useMemo(() => {
     const now = Date.now();
     const value = (pick: (p: LivePrice) => number | null) =>
@@ -69,81 +71,50 @@ export function PortfolioChart({
     // Exact daily values from the scan history (Cardmarket trend per card and day).
     const byDate = new Map<string, number>();
     const dates = new Set<string>();
-    for (const i of items)
-      for (const [d] of histories[i.setId]?.[i.cardId] ?? []) dates.add(d);
+    for (const i of items) for (const [d] of histories[i.setId]?.[i.cardId] ?? []) dates.add(d);
     for (const d of dates) {
       let sum = 0;
       for (const i of items) {
         const row = histories[i.setId]?.[i.cardId]?.find(([day]) => day === d);
-        const v = row?.[1] ?? prices[i.cardId]?.trend ?? null;
+        // Card Rush valuation reads the scan's Card Rush column (JPY), else Cardmarket's trend.
+        const day = cr ? (row?.[4] != null && jpyToEur ? row[4] * jpyToEur : null) : row?.[1];
+        const v = day ?? prices[i.cardId]?.trend ?? null;
         sum += (v ?? 0) * factor(i) * i.qty;
       }
       byDate.set(d, sum);
     }
     for (const [d, v] of snapshots) byDate.set(d, v); // what this device actually recorded
     byDate.set(new Date(now).toISOString().slice(0, 10), today);
-    const daily = [...byDate.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([d, v]) => ({ t: Date.parse(d), v }));
+    const daily = [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([d, v]) => ({ t: Date.parse(d), v }));
 
-    const from = range === "all" ? 0 : now - Number(range) * DAY;
-    const inRange = (pts: { t: number; v: number }[]) =>
-      pts.filter((p) => p.t >= from);
+    const from = range === 'all' ? 0 : now - Number(range) * DAY;
+    const inRange = (pts: { t: number; v: number }[]) => pts.filter((p) => p.t >= from);
 
     // Intraday: the live values recorded on this device, starting from the last known value
     // before the window so the line always spans it.
-    const live = ticks
-      .map(([t, v]) => ({ t, v }))
-      .filter((p) => p.t < now - 60_000);
+    const live = ticks.map(([t, v]) => ({ t, v })).filter((p) => p.t < now - 60_000);
     const before = [...daily, ...live]
       .filter((p) => p.t < from)
       .sort((a, b) => a.t - b.t)
       .pop();
-    const intraday = [
-      ...(before ? [{ t: from, v: before.v }] : []),
-      ...inRange(live),
-      { t: now, v: today },
-    ];
+    const intraday = [...(before ? [{ t: from, v: before.v }] : []), ...inRange(live), { t: now, v: today }];
     const base24 = [...daily, ...live]
       .filter((p) => p.t <= now - DAY)
       .sort((a, b) => a.t - b.t)
       .pop();
 
+    // Cardmarket's averages only describe a Cardmarket valuation.
+    const reference: Series[] = cr ? [] : [{ label: 'Rückblick (Cardmarket-Ø)', color: '#2ed8f0', dashed: true, points: inRange(lookback) }];
     const out: Series[] =
-      range === "1" || range === "7"
-        ? [
-            {
-              label: "Live-Werte",
-              color: "#8b7cff",
-              points: intraday,
-              stepped: true,
-            },
-            ...(range === "7"
-              ? [
-                  {
-                    label: "Rückblick (Cardmarket-Ø)",
-                    color: "#2ed8f0",
-                    dashed: true,
-                    points: inRange(lookback),
-                  },
-                ]
-              : []),
-          ]
-        : [
-            { label: "Tageswerte", color: "#8b7cff", points: inRange(daily) },
-            {
-              label: "Rückblick (Cardmarket-Ø)",
-              color: "#2ed8f0",
-              dashed: true,
-              points: inRange(lookback),
-            },
-          ];
+      range === '1' || range === '7'
+        ? [{ label: 'Live-Werte', color: '#8b7cff', points: intraday, stepped: true }, ...(range === '7' ? reference : [])]
+        : [{ label: 'Tageswerte', color: '#8b7cff', points: inRange(daily) }, ...reference];
     return {
       series: out,
       delta7: today - lookback[1].v,
       delta24: base24 ? today - base24.v : null,
     };
-  }, [items, prices, histories, snapshots, ticks, range, factor]);
+  }, [items, prices, histories, snapshots, ticks, range, factor, cr, jpyToEur]);
 
   if (!items.length) return null;
   return (
@@ -154,36 +125,28 @@ export function PortfolioChart({
           value={range}
           onChange={setRange}
           options={[
-            ["1", "1T"],
-            ["7", "7T"],
-            ["30", "30T"],
-            ["all", "Alle"],
+            ['1', '1T'],
+            ['7', '7T'],
+            ['30', '30T'],
+            ['all', 'Alle'],
           ]}
         />
       </div>
-      <PriceChart
-        height={190}
-        series={series}
-        intraday={range === "1" || range === "7"}
-      />
-      {range === "1" ? (
+      <PriceChart height={190} series={series} intraday={range === '1' || range === '7'} />
+      {range === '1' ? (
         <p className="hint">
-          Letzte 24 Std.:{" "}
-          {delta24 != null ? (
-            <b className={delta24 >= 0 ? "up" : "down"}>{fmtSigned(delta24)}</b>
-          ) : (
-            "noch keine Werte von gestern"
-          )}
-          . Live-Werte werden alle paar Minuten aufgezeichnet, solange die App
-          offen ist. Cardmarket aktualisiert seine Preise einmal täglich (ca. 3
-          Uhr); Karten ohne Cardmarket-Preis folgen live dem japanischen Markt.
+          Letzte 24 Std.: {delta24 != null ? <b className={delta24 >= 0 ? 'up' : 'down'}>{fmtSigned(delta24)}</b> : 'noch keine Werte von gestern'}. Live-Werte
+          werden alle paar Minuten aufgezeichnet, solange die App offen ist.{' '}
+          {cr
+            ? 'Card Rush ändert seine Preise mehrmals am Tag.'
+            : 'Cardmarket aktualisiert seine Preise einmal täglich (ca. 3 Uhr); Karten ohne Cardmarket-Preis folgen live dem japanischen Markt.'}
         </p>
+      ) : cr ? (
+        <p className="hint">Bewertung mit Card-Rush-Preisen (¥ → € zum aktuellen EZB-Kurs). Tageswerte kommen mit jedem täglichen Scan dazu.</p>
       ) : (
         <p className="hint">
-          Heute vs. 7-Tage-Durchschnitt:{" "}
-          <b className={delta7 >= 0 ? "up" : "down"}>{fmtSigned(delta7)}</b>.
-          Rückblick aus Cardmarkets 30- und 7-Tage-Durchschnitten; Tageswerte
-          kommen mit jedem täglichen Scan dazu.
+          Heute vs. 7-Tage-Durchschnitt: <b className={delta7 >= 0 ? 'up' : 'down'}>{fmtSigned(delta7)}</b>. Rückblick aus Cardmarkets 30- und
+          7-Tage-Durchschnitten; Tageswerte kommen mit jedem täglichen Scan dazu.
         </p>
       )}
     </section>

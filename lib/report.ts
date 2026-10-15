@@ -1,3 +1,4 @@
+import { cardrushSearchUrl, findCardrush } from './cardrush.js';
 import { getFx } from './fx.js';
 import { findPriceCharting } from './pricecharting.js';
 import { mercariSearchUrl, searchMercari } from './mercari.js';
@@ -54,7 +55,7 @@ export async function buildReport(id: string, origin?: string, part: 'all' | 'co
     'Yuyu-tei': yuyuteiSearchUrl(`${nameJa}`),
     'SNKRDUNK': `https://snkrdunk.com/search?keywords=${encodeURIComponent(`${setId} ${number}`)}`,
     'Mercari (sold)': mercariSearchUrl(jpQuery),
-    'Card Rush': `https://www.cardrush-pokemon.jp/product-list?keyword=${encodeURIComponent(`${nameJa} ${number}`)}`,
+    'Card Rush': cardrushSearchUrl(`${nameJa} ${number}`),
     'PriceCharting': `https://www.pricecharting.com/search-products?q=${encodeURIComponent(`pokemon japanese ${nameEn ?? nameJa} ${Number(localId) || localId}`)}&type=prices`,
   };
 
@@ -64,6 +65,7 @@ export async function buildReport(id: string, origin?: string, part: 'all' | 'co
       fx,
       links,
       cardmarket: cardmarket ? { ok: true, ...cardmarket } : { ok: false, error: 'No Cardmarket price guide entry', url: links.Cardmarket },
+      cardrush: PENDING,
       yuyutei: PENDING,
       snkrdunk: PENDING,
       mercari: PENDING,
@@ -74,7 +76,8 @@ export async function buildReport(id: string, origin?: string, part: 'all' | 'co
     };
   }
 
-  const [yuyutei, snkrdunk, mercari, pricecharting] = await Promise.all([
+  const [cardrush, yuyutei, snkrdunk, mercari, pricecharting] = await Promise.all([
+    settle(findCardrush(setId, number), 'Nicht bei Card Rush gelistet', links['Card Rush']),
     settle(
       findYuyutei(setId, number)
         .then((r) => r && { url: r.url, priceJpy: r.priceJpy, stock: r.stock, image: r.image.replace('/100_140/', '/front/') })
@@ -99,6 +102,7 @@ export async function buildReport(id: string, origin?: string, part: 'all' | 'co
     ),
   ]);
 
+  if (cardrush.ok) links['Card Rush'] = cardrush.url;
   if (yuyutei.ok) links['Yuyu-tei'] = yuyutei.url;
   if (snkrdunk.ok) links.SNKRDUNK = snkrdunk.url;
   if (pricecharting.ok) links.PriceCharting = pricecharting.url;
@@ -108,6 +112,7 @@ export async function buildReport(id: string, origin?: string, part: 'all' | 'co
     fx,
     links,
     cardmarket: cardmarket ? { ok: true, ...cardmarket } : { ok: false, error: 'No Cardmarket price guide entry', url: links.Cardmarket },
+    cardrush,
     yuyutei,
     snkrdunk,
     mercari,
@@ -129,9 +134,10 @@ async function buildExternalReport(id: string): Promise<CardReport> {
     SNKRDUNK: `https://snkrdunk.com/apparels/${externalSnkId(id)}`,
     'Yuyu-tei': yuyuteiSearchUrl(card.nameJa),
     'Mercari (sold)': mercariSearchUrl(jpQuery),
-    'Card Rush': `https://www.cardrush-pokemon.jp/product-list?keyword=${encodeURIComponent(jpQuery)}`,
+    'Card Rush': cardrushSearchUrl(jpQuery),
   };
-  const [snkrdunk, mercari, yuyutei] = await Promise.all([
+  const [cardrush, snkrdunk, mercari, yuyutei] = await Promise.all([
+    settle(findCardrush(card.setId, card.number), 'Nicht bei Card Rush gelistet', links['Card Rush']),
     settle(getSnkrdunk(externalSnkId(id)), 'Nicht auf SNKRDUNK gefunden', links.SNKRDUNK),
     settle(searchMercari(jpQuery, [card.number.split('/')[0]]), 'Keine Mercari-Angebote', links['Mercari (sold)']),
     settle(
@@ -145,6 +151,7 @@ async function buildExternalReport(id: string): Promise<CardReport> {
     fx,
     links,
     cardmarket: { ok: false, error: 'Für dieses Produkt gibt es keine Cardmarket-Zuordnung – bitte manuell suchen', url: cmSearch },
+    cardrush,
     yuyutei,
     snkrdunk,
     mercari,

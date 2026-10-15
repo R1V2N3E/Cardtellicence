@@ -1,4 +1,4 @@
-import type { CardReport, Opportunity } from '../lib/types';
+import type { CardReport, Opportunity, SealedItem } from '../lib/types';
 import type { BuySource, SellRef, Settings } from './state';
 
 export interface BuyOption {
@@ -18,6 +18,7 @@ export interface Margin {
 }
 
 export const BUY_LABEL: Record<BuySource, string> = {
+  cardrush: 'Card Rush',
   cheapest: 'Günstigster',
   yuyutei: 'Yuyu-tei',
   snkrdunk: 'SNKRDUNK',
@@ -50,8 +51,12 @@ function staleNote(asOf: string | null | undefined): string | undefined {
   return `Stand ${new Date(asOf).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}`;
 }
 
+const stockNote = (stock: number | null | undefined) => (stock === 0 ? 'ausverkauft' : stock != null ? `${stock} auf Lager` : undefined);
+
 export function opportunityMargin(o: Opportunity, s: Settings, jpyToEur: number): Margin {
   const options: BuyOption[] = [];
+  if (o.crJpy && (s.includeSoldOut || o.crStock !== 0))
+    options.push({ source: 'cardrush', label: 'Card Rush', jpy: o.crJpy, note: o.crStock === 0 ? 'ausverkauft' : undefined });
   if (o.yytJpy && (s.includeSoldOut || o.yytStock !== 0))
     options.push({ source: 'yuyutei', label: 'Yuyu-tei', jpy: o.yytJpy, note: o.yytStock === 0 ? 'ausverkauft' : staleNote(o.yytAsOf) });
   if (o.snkAskJpy) options.push({ source: 'snkrdunk', label: 'SNKRDUNK', jpy: o.snkAskJpy });
@@ -62,6 +67,8 @@ export function opportunityMargin(o: Opportunity, s: Settings, jpyToEur: number)
 
 export function reportBuyOptions(r: CardReport, includeSoldOut: boolean): BuyOption[] {
   const out: BuyOption[] = [];
+  if (r.cardrush.ok && (includeSoldOut || r.cardrush.stock !== 0))
+    out.push({ source: 'cardrush', label: 'Card Rush', jpy: r.cardrush.priceJpy, note: stockNote(r.cardrush.stock), url: r.cardrush.url });
   if (r.yuyutei.ok && (includeSoldOut || r.yuyutei.stock !== 0))
     out.push({
       source: 'yuyutei',
@@ -80,6 +87,14 @@ export function reportBuyOptions(r: CardReport, includeSoldOut: boolean): BuyOpt
     });
   if (r.mercari.ok && r.mercari.activeLowestJpy)
     out.push({ source: 'mercari', label: 'Mercari', jpy: r.mercari.activeLowestJpy, note: 'günstigstes Angebot', url: r.mercari.url });
+  return out;
+}
+
+/** Buy options for a sealed product (Card Rush shop price, SNKRDUNK lowest ask). */
+export function sealedBuyOptions(x: SealedItem, includeSoldOut: boolean): BuyOption[] {
+  const out: BuyOption[] = [];
+  if (x.crJpy && (includeSoldOut || x.crStock !== 0)) out.push({ source: 'cardrush', label: 'Card Rush', jpy: x.crJpy, note: stockNote(x.crStock), url: x.crUrl ?? undefined });
+  if (x.snkAskJpy) out.push({ source: 'snkrdunk', label: 'SNKRDUNK', jpy: x.snkAskJpy, url: x.snkId ? `https://snkrdunk.com/apparels/${x.snkId}` : undefined });
   return out;
 }
 

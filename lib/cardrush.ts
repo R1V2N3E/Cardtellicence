@@ -5,22 +5,12 @@
 // cards and can be filtered by set code, so a whole set costs 1–4 requests. Its /api is
 // disallowed in robots.txt, so only the public pages are read.
 import { cached, getText } from './http.js';
+import type { CardRushPrice } from './types.js';
+
+export type { CardRushPrice };
 
 const BASE = 'https://cardrush.media/pokemon/buying_prices';
 const SHOP = 'https://www.cardrush-pokemon.jp';
-
-export interface CardRushPrice {
-  url: string; // shop product page
-  productId: number;
-  priceJpy: number; // shop sell price (what a buyer pays)
-  stock: number;
-  buyJpy: number | null; // Card Rush buy price (what they pay you)
-  name: string;
-  rarity: string;
-  number: string; // "201/165"
-  variant: string; // '' = normal print; else e.g. "マスターボールミラー", "未開封BOX"
-  updatedAt: string;
-}
 
 interface RawBuyingPrice {
   name: string;
@@ -89,6 +79,20 @@ async function allPages(params: [string, string][], maxPages = 8): Promise<RawBu
   return rows;
 }
 
+/**
+ * Variant labels that mark a different product than the normal print of that number (mirror
+ * parallels, unopened promos, first editions, graded slabs). Labels like "SA" (special art) only
+ * describe the card itself and are kept.
+ */
+const PARALLEL = /ミラー|未開封|1ED|PSA|BGS|ARS|仕様|エラー|サイン|プロモ|シュリンク/;
+
+/** Between two listings of the same number: the plain one, then the one in stock, then the cheaper. */
+function better(a: CardRushPrice, b: CardRushPrice): boolean {
+  if (!a.variant !== !b.variant) return !a.variant;
+  if (a.stock > 0 !== b.stock > 0) return a.stock > 0;
+  return a.priceJpy < b.priceJpy;
+}
+
 /** Card Rush spells older set codes in lower case ("sm12a", "sm3H"); try the likely spellings. */
 export function packCodes(setId: string): string[] {
   return [...new Set([setId, setId.replace(/^[A-Z]+/, (p) => p.toLowerCase()), setId.toLowerCase()])];
@@ -106,11 +110,10 @@ export function cardrushSet(setId: string): Promise<Map<string, CardRushPrice>> 
       if (!rows.length) continue;
       const out = new Map<string, CardRushPrice>();
       for (const r of rows) {
-        if (r.extra_difference) continue;
+        if (PARALLEL.test(r.extra_difference ?? '')) continue;
         const p = toPrice(r);
-        // The same number can appear twice (re-listings); keep the one with stock, then the cheaper.
         const prev = p && out.get(p.number);
-        if (p && (!prev || (prev.stock === 0 && p.stock > 0) || (prev.stock > 0 === p.stock > 0 && p.priceJpy < prev.priceJpy))) out.set(p.number, p);
+        if (p && (!prev || better(p, prev))) out.set(p.number, p);
       }
       return out;
     }
@@ -124,10 +127,18 @@ export async function findCardrush(setId: string, number: string): Promise<CardR
 
 export const cardrushSearchUrl = (keyword: string) => `${SHOP}/product-list?keyword=${encodeURIComponent(keyword)}`;
 
-/** Sealed boxes/packs of a set at Card Rush (listed by product name, without a set code). */
-export function cardrushSealed(setName: string): Promise<CardRushPrice[]> {
+/**
+ * The booster box and pack of a set at Card Rush. Sealed products are listed by name
+ * (「拡張パック『クレイバースト』」), so the set name must appear in 『』 — this skips gift sets
+ * and Pokémon Center bundles that merely contain the set's name.
+ */
+export function cardrushSealed(setName: string): Promise<{ box: CardRushPrice | null; pack: CardRushPrice | null }> {
   const core = setName.split(/\s+/).pop() ?? setName;
-  return cached(`cr:sealed:${core}`, 30 * 60_000, async () =>
-    (await allPages([['display_category', 'パック'], ['name', core]], 2)).map(toPrice).filter((p): p is CardRushPrice => !!p && p.name.includes(core)),
-  );
+  return cached(`cr:sealed:${core}`, 30 * 60_000, async () => {
+    const rows = (await allPages([['display_category', 'パック'], ['name', core]], 2))
+      .map(toPrice)
+      .filter((p): p is CardRushPrice => !!p && p.name.includes(`『${core}』`));
+    const pick = (variant: string) => rows.filter((p) => p.variant === variant).sort((a, b) => (better(a, b) ? -1 : 1))[0] ?? null;
+    return { box: pick('未開封BOX'), pack: pick('未開封パック') };
+  });
 }

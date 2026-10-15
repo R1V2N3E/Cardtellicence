@@ -38,7 +38,9 @@ function useStored<T>(key: string, load: () => T): [T, (v: T) => void] {
   return [value, useCallback((v: T) => write(key, v), [key])];
 }
 
-export type BuySource = 'cheapest' | 'yuyutei' | 'snkrdunk' | 'mercari';
+export type BuySource = 'cardrush' | 'cheapest' | 'yuyutei' | 'snkrdunk' | 'mercari';
+/** What the portfolio is valued at: Card Rush (Japan's reference price) or Cardmarket. */
+export type Valuation = 'cardrush' | 'cardmarket';
 export type SellRef = 'trend' | 'avg30' | 'avg7' | 'low';
 
 export interface Settings {
@@ -47,17 +49,29 @@ export interface Settings {
   minTrend: number;
   includeSoldOut: boolean;
   showJpy: boolean;
+  valuation: Valuation;
+  /** Set once Card Rush became the default; older saved settings are moved over once. */
+  cardrushDefaults?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  buySource: 'cheapest',
+  buySource: 'cardrush',
   sellRef: 'trend',
   minTrend: 10,
   includeSoldOut: false,
   showJpy: true,
+  valuation: 'cardrush',
+  cardrushDefaults: true,
 };
 
-export const useSettings = () => useStored<Settings>('ct-settings', () => read('ct-settings', DEFAULT_SETTINGS));
+function loadSettings(): Settings {
+  const s = read('ct-settings', DEFAULT_SETTINGS);
+  // Look at what is stored, not the merged defaults (which already carry the flag).
+  const stored = read<Partial<Settings>>('ct-settings', {});
+  return stored.cardrushDefaults ? s : { ...s, buySource: 'cardrush', valuation: 'cardrush', cardrushDefaults: true };
+}
+
+export const useSettings = () => useStored<Settings>('ct-settings', loadSettings);
 
 export interface WatchItem {
   id: string;
@@ -134,29 +148,34 @@ export function useCollection() {
   return { items, add, update, remove, replaceAll };
 }
 
+// Values are kept per valuation basis, so switching between Card Rush and Cardmarket never
+// draws a fake jump into the chart.
+const historyKey = (v: Valuation) => (v === 'cardrush' ? 'ct-portfolio-history-cr' : 'ct-portfolio-history');
+const ticksKey = (v: Valuation) => (v === 'cardrush' ? 'ct-portfolio-ticks-cr' : 'ct-portfolio-ticks');
+
 /** Daily portfolio totals for the change figure and the value chart: [yyyy-mm-dd, EUR]. */
-export function recordPortfolioValue(value: number) {
+export function recordPortfolioValue(value: number, v: Valuation) {
   const today = new Date().toISOString().slice(0, 10);
-  const hist = readList<[string, number]>('ct-portfolio-history').filter(([d]) => d !== today);
+  const hist = readList<[string, number]>(historyKey(v)).filter(([d]) => d !== today);
   hist.push([today, Math.round(value * 100) / 100]);
-  write('ct-portfolio-history', hist.slice(-730));
+  write(historyKey(v), hist.slice(-730));
 }
-export const readPortfolioHistory = () => readList<[string, number]>('ct-portfolio-history');
+export const readPortfolioHistory = (v: Valuation) => readList<[string, number]>(historyKey(v));
 
 /**
  * Intraday values for the 1-day chart: [epoch ms, EUR]. A point is kept whenever the value
  * changes, and at most every 10 minutes while it doesn't; 30 days are kept.
  */
-export function recordPortfolioTick(value: number) {
+export function recordPortfolioTick(value: number, valuation: Valuation) {
   const now = Date.now();
   const v = Math.round(value * 100) / 100;
-  const ticks = readList<[number, number]>('ct-portfolio-ticks').filter(([t]) => t > now - 30 * 86400_000);
+  const ticks = readList<[number, number]>(ticksKey(valuation)).filter(([t]) => t > now - 30 * 86400_000);
   const last = ticks[ticks.length - 1];
   if (last && last[1] === v && now - last[0] < 10 * 60_000) return;
   ticks.push([now, v]);
-  write('ct-portfolio-ticks', ticks);
+  write(ticksKey(valuation), ticks);
 }
-export const readPortfolioTicks = () => readList<[number, number]>('ct-portfolio-ticks');
+export const readPortfolioTicks = (v: Valuation) => readList<[number, number]>(ticksKey(v));
 
 export function readAccessCode(): string {
   try {

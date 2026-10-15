@@ -10,7 +10,9 @@ export interface LivePrice {
   avg30: number | null;
   low: number | null;
   updated: string | null;
-  source?: 'cardmarket' | 'japan';
+  source?: 'cardmarket' | 'japan' | 'cardrush';
+  /** Card Rush: shop sell price (JPY), stock, buy price; updated during the day. */
+  cr?: { jpy: number; stock: number; buyJpy: number | null; url: string; updatedAt: string } | null;
 }
 
 export class ApiError extends Error {

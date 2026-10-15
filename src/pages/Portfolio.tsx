@@ -5,7 +5,7 @@ import { AppBar } from '../components/AppBar';
 import { PortfolioChart } from '../components/PortfolioChart';
 import { CardLink, Chips, Thumb } from '../components/ui';
 import { ago, fmtEur, fmtJpy, fmtSigned, marginClass } from '../format';
-import { CONDITIONS, readPortfolioHistory, readPortfolioTicks, recordPortfolioTick, recordPortfolioValue, useCollection, type CollectionItem, type Condition } from '../state';
+import { CONDITIONS, readPortfolioHistory, readPortfolioTicks, recordPortfolioTick, recordPortfolioValue, useCollection, useSettings, type CollectionItem, type Condition } from '../state';
 import { Watchlist } from './Watchlist';
 import { usePullToRefresh, useSwipeTabs } from '../gestures';
 
@@ -30,7 +30,8 @@ export function Portfolio() {
   const [editing, setEditing] = useState(false);
   useSwipeTabs<Tab>(['cards', 'sealed', 'sets', 'watch'], tab, setTab, !editing);
   const [menu, setMenu] = useState(false);
-  const [prices, setPrices] = useState<Record<string, LivePrice | null>>({});
+  const [rawPrices, setPrices] = useState<Record<string, LivePrice | null>>({});
+  const [{ valuation }] = useSettings();
   const [fx, setFx] = useState<number | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,6 +68,19 @@ export function Portfolio() {
     fetch('/api/fx').then((r) => r.json()).then((f) => setFx(f.jpyToEur)).catch(() => {});
   }, []);
 
+  // The price each card is valued at: Card Rush (¥ → €, the default) or Cardmarket. Cards
+  // without a Card Rush price keep their Cardmarket value; until the exchange rate is known a
+  // Card Rush card counts as not yet priced, so no half-converted total is ever recorded.
+  const prices = useMemo(() => {
+    if (valuation !== 'cardrush') return rawPrices;
+    const out: Record<string, LivePrice | null> = {};
+    for (const [id, p] of Object.entries(rawPrices)) {
+      if (!p?.cr) out[id] = p;
+      else if (fx) out[id] = { ...p, trend: Math.round(p.cr.jpy * fx * 100) / 100, avg1: null, avg7: null, avg30: null, low: null, source: 'cardrush' };
+    }
+    return out;
+  }, [rawPrices, fx, valuation]);
+
   const unitValue = (i: CollectionItem) => {
     const p = prices[i.cardId]?.trend;
     return p != null ? p * CONDITION_FACTOR[i.condition] : null;
@@ -100,12 +114,17 @@ export function Portfolio() {
   const complete = items.length > 0 && totals.priced === items.length;
   useEffect(() => {
     if (!complete) return;
-    recordPortfolioValue(totals.value);
-    recordPortfolioTick(totals.value);
-  }, [complete, totals.value, fetchedAt]);
-  const history = useMemo(() => readPortfolioHistory(), [complete, totals.value]);
-  const ticks = useMemo(() => readPortfolioTicks(), [complete, totals.value, fetchedAt]);
+    recordPortfolioValue(totals.value, valuation);
+    recordPortfolioTick(totals.value, valuation);
+  }, [complete, totals.value, fetchedAt, valuation]);
+  const history = useMemo(() => readPortfolioHistory(valuation), [complete, totals.value, valuation]);
+  const ticks = useMemo(() => readPortfolioTicks(valuation), [complete, totals.value, fetchedAt, valuation]);
   const change = useMemo(() => {
+    if (history.length < 2 && valuation === 'cardrush') {
+      // Card Rush has no published averages: compare with the first value recorded here.
+      const base = ticks[0];
+      return base && Date.now() - base[0] > 30 * 60_000 ? { delta: totals.value - base[1], since: new Date(base[0]).toISOString(), week: false } : null;
+    }
     if (history.length < 2) {
       // No recorded week yet: compare with Cardmarket's 7-day averages.
       const avg7 = items.reduce((n, i) => n + (prices[i.cardId]?.avg7 ?? prices[i.cardId]?.trend ?? 0) * CONDITION_FACTOR[i.condition] * i.qty, 0);
@@ -114,7 +133,7 @@ export function Portfolio() {
     const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
     const base = [...history].reverse().find(([d]) => d <= weekAgo) ?? history[0];
     return { delta: totals.value - base[1], since: base[0], week: base[0] <= weekAgo };
-  }, [history.length, totals.value, prices, items]);
+  }, [history.length, totals.value, prices, items, ticks, valuation]);
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -218,7 +237,7 @@ export function Portfolio() {
                 </div>
               )}
               <div className="pf-sub muted">
-                {loading ? 'Preise werden aktualisiert…' : fetchedAt ? `Cardmarket-Preise · aktualisiert ${ago(fetchedAt)}` : ''}
+                {loading ? 'Preise werden aktualisiert…' : fetchedAt ? `${valuation === 'cardrush' ? 'Card-Rush-Preise (¥ → €)' : 'Cardmarket-Preise'} · aktualisiert ${ago(fetchedAt)}` : ''}
               </div>
             </div>
             <div className="pf-actions">
@@ -239,7 +258,7 @@ export function Portfolio() {
             </div>
           </div>
 
-          <PortfolioChart items={items} prices={prices} factor={valueFactor} snapshots={history} ticks={ticks} />
+          <PortfolioChart items={items} prices={prices} factor={valueFactor} snapshots={history} ticks={ticks} valuation={valuation} jpyToEur={fx} />
 
           {!items.length && (
             <div className="empty-state">
@@ -273,6 +292,12 @@ export function Portfolio() {
                         {c != null && v != null && <span className={`pf-pl ${marginClass(v - c)}`}>{fmtSigned(v - c)}</span>}
                       </div>
                       <div className="pf-set">{i.setName || i.setId}</div>
+                      {valuation === 'cardrush' && rawPrices[i.cardId]?.cr && (
+                        <div className="pf-cost">
+                          Card Rush {fmtJpy(rawPrices[i.cardId]!.cr!.jpy)}
+                          {rawPrices[i.cardId]!.cr!.stock === 0 ? ' · ausverkauft' : ''}
+                        </div>
+                      )}
                       {i.cost && <div className="pf-cost">Einkauf {i.cost.currency === 'JPY' ? fmtJpy(i.cost.amount) : fmtEur(i.cost.amount)}</div>}
                       <div className="pf-meta">
                         <span>{isSealed(i) ? 'Versiegelt' : conditionLabel(i.condition)}</span>
@@ -305,7 +330,7 @@ export function Portfolio() {
                       className="pf-tile"
                       preview={{
                         card: { id: i.cardId, setId: i.setId, setName: i.setName, localId: i.number.split('/')[0], number: i.number, nameJa: i.nameJa, nameEn: i.nameEn, rarity: i.rarity, image: i.image },
-                        cardmarket: prices[i.cardId]?.source === 'cardmarket' ? prices[i.cardId] : null,
+                        cardmarket: rawPrices[i.cardId]?.source === 'cardmarket' ? rawPrices[i.cardId] : null,
                       }}
                     >
                       {body}
@@ -317,7 +342,8 @@ export function Portfolio() {
                 <p className="empty">Noch keine Sealed-Produkte. Füge Displays oder Booster über Deals → Sealed hinzu.</p>
               )}
               {items.length > 0 && (
-                <p className="hint">Wert = Cardmarket-Trend der japanischen Ausgabe; gespielte Zustände geschätzt (LP −15 %, MP −30 %, HP −50 %). PSA-Karten zum Rohpreis.</p>
+                <p className="hint">
+                  Wert = {valuation === 'cardrush' ? 'Card-Rush-Verkaufspreis in € (sonst Cardmarket-Trend)' : 'Cardmarket-Trend der japanischen Ausgabe'}; gespielte Zustände geschätzt (LP −15 %, MP −30 %, HP −50 %). PSA-Karten zum Rohpreis.</p>
               )}
             </>
           )}

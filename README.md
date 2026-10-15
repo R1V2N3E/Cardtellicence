@@ -22,7 +22,7 @@ find Japanese cards that are cheap in Japan and sell for more on Cardmarket.
 | 💱 | **ECB** reference rates | JPY→EUR, USD→EUR |
 | 🗂 | **TCGdex** | Japanese card database, images, Cardmarket product ids |
 
-**Card Rush** sits behind a Cloudflare bot challenge, so it can't be read by a server. The app links to it instead.
+**Card Rush** is the main Japanese price reference. Its shop sits behind a Cloudflare bot challenge, but Card Rush's own price list on cardrush.media (sell price, stock and buy price per set) is server-rendered and read per set (`lib/cardrush.ts`); its `/api` is disallowed in robots.txt and not used. Portfolio values and the default buy price use Card Rush, with Cardmarket as fallback.
 
 How cards are matched across sources:
 

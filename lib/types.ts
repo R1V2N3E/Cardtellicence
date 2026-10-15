@@ -42,6 +42,20 @@ export interface YuyuteiPrice {
   asOf?: string; // set when the price comes from the daily scan instead of a live fetch
 }
 
+/** Card Rush (カードラッシュ): Japan's reference shop price for a card. */
+export interface CardRushPrice {
+  url: string; // shop product page
+  productId: number;
+  priceJpy: number; // shop sell price (what a buyer pays)
+  stock: number;
+  buyJpy: number | null; // Card Rush buy price (what they pay you)
+  name: string;
+  rarity: string;
+  number: string; // "201/165"
+  variant: string; // '' = normal print; else e.g. "マスターボールミラー", "未開封BOX"
+  updatedAt: string;
+}
+
 export interface SnkrdunkTrade {
   priceJpy: number;
   soldAt: string;
@@ -99,6 +113,7 @@ export interface CardReport {
   fx: FxRates;
   links: Record<string, string>;
   cardmarket: SourceResult<CardmarketPrices>;
+  cardrush: SourceResult<CardRushPrice>;
   yuyutei: SourceResult<YuyuteiPrice>;
   snkrdunk: SourceResult<SnkrdunkData>;
   mercari: SourceResult<MercariData>;
@@ -126,6 +141,10 @@ export interface Opportunity {
   yytUrl: string | null;
   yytAsOf?: string | null; // date of the Yuyu-tei price when carried over from an earlier scan
   snkAskJpy: number | null;
+  crJpy?: number | null; // Card Rush sell price
+  crStock?: number | null;
+  crBuyJpy?: number | null; // Card Rush buy price (買取)
+  crId?: number | null; // Card Rush shop product id
   snkId?: number | null;
   snkImg?: string | null;
 }
@@ -145,6 +164,10 @@ export interface SealedItem {
   snkAskJpy: number | null;
   snkLabel: string | null;
   image: string | null;
+  crJpy?: number | null; // Card Rush sell price
+  crStock?: number | null;
+  crBuyJpy?: number | null;
+  crUrl?: string | null;
 }
 
 export interface OpportunityFile {
@@ -155,8 +178,8 @@ export interface OpportunityFile {
   sealed?: SealedItem[];
 }
 
-/** History file per set: cardId -> rows of [yyyy-mm-dd, cmTrend, cmAvg30, yytJpy]. */
-export type HistoryFile = Record<string, [string, number | null, number | null, number | null][]>;
+/** History file per set: cardId -> rows of [yyyy-mm-dd, cmTrend, cmAvg30, yytJpy, crJpy?]. */
+export type HistoryFile = Record<string, [string, number | null, number | null, number | null, (number | null)?][]>;
 
 export interface ChartPoint {
   t: number;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { requestPersistence, storageStatus, type StorageStatus } from '../storage';
 import { Chips, Header } from '../components/ui';
 import { BUY_LABEL, SELL_LABEL } from '../margin';
-import { DEFAULT_SETTINGS, readAccessCode, useCollection, useSettings, useWatchlist, writeAccessCode, type BuySource, type SellRef } from '../state';
+import { DEFAULT_SETTINGS, readAccessCode, useCollection, useSettings, useWatchlist, writeAccessCode, type BuySource, type SellRef, type Valuation } from '../state';
 
 export function SettingsPage() {
   const [s, setS] = useSettings();
@@ -44,15 +44,30 @@ export function SettingsPage() {
     <>
       <Header title="Einstellungen" sub="Auf diesem Gerät gespeichert" />
       <section className="panel">
+        <h2>Bewertung der Sammlung</h2>
+        <Chips<Valuation>
+          value={s.valuation}
+          onChange={(v) => set('valuation', v)}
+          options={[
+            ['cardrush', 'Card Rush (Japan)'],
+            ['cardmarket', 'Cardmarket (DE)'],
+          ]}
+        />
+        <p className="hint">
+          Card Rush ist in Japan die wichtigste Orientierung für Kartenwerte: Shop-Verkaufspreis in ¥, live umgerechnet in €, mehrmals täglich aktualisiert.
+          Karten ohne Card-Rush-Preis werden mit Cardmarket bewertet.
+        </p>
+      </section>
+      <section className="panel">
         <h2>Einkaufspreis (Japan)</h2>
         <Chips<BuySource> value={s.buySource} onChange={(v) => set('buySource', v)} options={(Object.keys(BUY_LABEL) as BuySource[]).map((k) => [k, BUY_LABEL[k]])} />
         <p className="hint">
-          Yuyu-tei = fester Shoppreis mit Lagerbestand. SNKRDUNK = günstigstes Marktplatz-Angebot. Mercari = günstigstes aktives Angebot (nur
+          Card Rush = Japans Referenz-Shop (Preis + Lagerbestand, Standard). Yuyu-tei = fester Shoppreis mit Lagerbestand. SNKRDUNK = günstigstes Marktplatz-Angebot. Mercari = günstigstes aktives Angebot (nur
           Kartenseite). „Günstigster“ nimmt den niedrigsten verfügbaren Preis.
         </p>
         <label className="toggle">
           <input type="checkbox" checked={s.includeSoldOut} onChange={(e) => set('includeSoldOut', e.target.checked)} />
-          Yuyu-tei-Preise auch bei „ausverkauft“ berücksichtigen
+          Shop-Preise (Card Rush, Yuyu-tei) auch bei „ausverkauft“ berücksichtigen
         </label>
       </section>
       <section className="panel">

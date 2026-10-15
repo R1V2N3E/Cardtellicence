@@ -72,6 +72,7 @@ function fromPreview(p: CardPreview): CardReport {
     cardmarket: cm
       ? { ok: true, url: '', idProduct: null, trend: null, low: null, avg: null, avg1: null, avg7: null, avg30: null, updated: null, ...p.cardmarket }
       : PENDING,
+    cardrush: PENDING,
     yuyutei: PENDING,
     snkrdunk: PENDING,
     mercari: PENDING,

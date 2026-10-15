@@ -10,7 +10,7 @@ import { BUY_LABEL, computeMargin, pickBuy, reportBuyOptions, reportSell, SELL_L
 import { useCollection, useSettings, useWatchlist, type BuySource, type SellRef } from '../state';
 import { AddSheet } from '../components/AddSheet';
 
-const COLORS = { snk: '#ff9f5a', cm: '#8b7cff', cmAvg: '#b8adff', yyt: '#3ee6a8', pc: '#f472b6' };
+const COLORS = { snk: '#ff9f5a', cm: '#8b7cff', cmAvg: '#b8adff', yyt: '#3ee6a8', pc: '#f472b6', cr: '#ffc24b' };
 type Range = 'oneWeek' | 'oneMonth' | 'threeMonths' | 'all';
 const RANGE_DAYS: Record<Range, number> = { oneWeek: 7, oneMonth: 31, threeMonths: 92, all: 3650 };
 
@@ -29,7 +29,7 @@ export function CardPage() {
 
   const options = useMemo(() => (r ? reportBuyOptions(r, settings.includeSoldOut) : []), [r, settings.includeSoldOut]);
   const margin = useMemo(
-    () => (r ? computeMargin(pickBuy(options, buySource), reportSell(r, sellRef), r.fx.jpyToEur) : null),
+    () => (r ? computeMargin(pickBuy(options, buySource, !r.partial), reportSell(r, sellRef), r.fx.jpyToEur) : null),
     [r, options, buySource, sellRef],
   );
 
@@ -293,6 +293,19 @@ function PriceTables({ r }: { r: CardReport }) {
       </section>
       <section className="panel">
         <h2>🇯🇵 Japan (Einkauf)</h2>
+        {r.cardrush.ok ? (
+          <>
+            <Row
+              label="Card Rush Verkaufspreis"
+              value={fmtJpy(r.cardrush.priceJpy)}
+              sub={`${eur(r.cardrush.priceJpy)} · ${r.cardrush.stock === 0 ? 'ausverkauft' : `${r.cardrush.stock} auf Lager`} · Stand ${ago(r.cardrush.updatedAt)}`}
+              href={r.cardrush.url}
+            />
+            <Row label="Card Rush Ankauf (買取)" value={fmtJpy(r.cardrush.buyJpy)} sub={eur(r.cardrush.buyJpy)} />
+          </>
+        ) : (
+          <Unavailable label="Card Rush" res={r.cardrush} />
+        )}
         {r.yuyutei.ok ? (
           <Row
             label="Yuyu-tei Shoppreis"
@@ -341,6 +354,9 @@ function Charts({ r }: { r: CardReport }) {
       const rows = hist.data?.[r.card.id] ?? [];
       const at = (d: string) => Date.parse(d);
       out.push({ label: 'Cardmarket-Trend', points: inRange(rows.filter((x) => x[1] != null).map((x) => ({ t: at(x[0]), v: x[1]! }))), color: COLORS.cm });
+      const crPoints = rows.filter((x) => x[4] != null).map((x) => ({ t: at(x[0]), v: x[4]! * r.fx.jpyToEur }));
+      if (r.cardrush.ok) crPoints.push({ t: Date.now(), v: r.cardrush.priceJpy * r.fx.jpyToEur });
+      out.push({ label: 'Card Rush', points: inRange(crPoints), color: COLORS.cr, stepped: true });
       out.push({ label: 'Yuyu-tei', points: inRange(rows.filter((x) => x[3] != null).map((x) => ({ t: at(x[0]), v: x[3]! * r.fx.jpyToEur }))), color: COLORS.yyt, stepped: true });
       // Current Cardmarket levels as reference lines across the visible range.
       if (r.cardmarket.ok && r.cardmarket.trend) {

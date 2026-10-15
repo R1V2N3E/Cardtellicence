@@ -2,6 +2,7 @@
 //
 // For every configured Japanese set it joins:
 //   - Cardmarket price guide for the Japanese printing (via TCGdex), EUR
+//   - Card Rush shop price + stock + buy price, JPY (Japan's reference price)
 //   - Yuyu-tei shop price + stock, JPY
 // then enriches the best candidates with the SNKRDUNK lowest ask, and writes
 //   public/data/opportunities.json   (what the Deals screen shows)
@@ -9,8 +10,9 @@
 //
 // Env: SCAN_SETS="SV2a,SV8a" to limit sets, SCAN_ALL=1 to include non-secret-rare cards.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cardrushSealed, cardrushSet, type CardRushPrice } from '../lib/cardrush.js';
 import { getFx } from '../lib/fx.js';
-import { mapLimit } from '../lib/http.js';
+import { getJson, mapLimit } from '../lib/http.js';
 import { findSnkrdunk } from '../lib/snkrdunk.js';
 import { sealedForSet } from '../lib/sealed.js';
 import type { SealedItem } from '../lib/types.js';
@@ -35,6 +37,20 @@ const SNK_MAX = 900;
 const YYT_CARRY_DAYS = 14;
 const HISTORY_DAYS = 400;
 
+// Card Rush answers some networks with 403; then its prices are read through the app's own
+// endpoint, which runs in Tokyo.
+const APP_URL = process.env.APP_URL || 'https://cardtellicence.vercel.app';
+
+async function cardrushForScan(setId: string): Promise<Map<string, CardRushPrice>> {
+  try {
+    return await cardrushSet(setId);
+  } catch (e) {
+    log(`  card rush ${setId} direct: ${(e as Error).message}, using ${APP_URL}`);
+    const r = await getJson<{ prices: Record<string, CardRushPrice> }>(`${APP_URL}/api/cardrush?set=${encodeURIComponent(setId)}`);
+    return new Map(Object.entries(r.prices));
+  }
+}
+
 const OUT_DIR = new URL('../public/data/', import.meta.url);
 const today = new Date().toISOString().slice(0, 10);
 const log = (...a: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -46,7 +62,11 @@ async function scanSet(setId: string, all: boolean): Promise<Opportunity[]> {
   // without secret numbering (e.g. SV11B) are scanned in full.
   const secret = set.cards.filter((c) => !/^\d+$/.test(c.localId) || Number(c.localId) > official);
   const candidates = all || !secret.length ? set.cards : secret;
-  const [yyt, raws] = await Promise.all([
+  const [cr, yyt, raws] = await Promise.all([
+    cardrushForScan(setId).catch((e) => {
+      log(`  card rush ${setId}: ${e.message}`);
+      return new Map<string, CardRushPrice>();
+    }),
     getYuyuteiSet(setId).catch((e) => {
       log(`  yuyu-tei ${setId}: ${e.message}`);
       return [];
@@ -60,6 +80,7 @@ async function scanSet(setId: string, all: boolean): Promise<Opportunity[]> {
     const cm = await cardmarketFor(raw).catch(() => null);
     if (!cm?.trend || cm.trend < MIN_TREND_EUR) continue;
     const s = toSummary(raw);
+    const rush = cr.get(s.number);
     const exact = yyt.filter((r) => r.number === s.number);
     const shop = (exact.length ? exact : yyt.filter((r) => r.number.split('/')[0] === s.number.split('/')[0]))
       .sort((a, b) => (a.stock === 0 ? 1 : 0) - (b.stock === 0 ? 1 : 0) || a.priceJpy - b.priceJpy)[0];
@@ -79,9 +100,13 @@ async function scanSet(setId: string, all: boolean): Promise<Opportunity[]> {
       yytStock: shop?.stock ?? null,
       yytUrl: shop?.url ?? null,
       snkAskJpy: null,
+      crJpy: rush?.priceJpy ?? null,
+      crStock: rush?.stock ?? null,
+      crBuyJpy: rush?.buyJpy ?? null,
+      crId: rush?.productId ?? null,
     });
   }
-  log(`  ${setId} ${set.name}: ${candidates.length} cards checked, ${rows.length} priced, ${yyt.length} yuyu-tei rows`);
+  log(`  ${setId} ${set.name}: ${candidates.length} cards checked, ${rows.length} priced, ${cr.size} card rush, ${yyt.length} yuyu-tei rows`);
   return rows;
 }
 
@@ -96,7 +121,7 @@ function writeHistory(items: Opportunity[]) {
     const hist: HistoryFile = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
     for (const r of rows) {
       const series = (hist[r.id] ?? []).filter(([d]) => d !== today && d >= cutoff);
-      series.push([today, r.cmTrend, r.cmAvg30, r.yytJpy]);
+      series.push([today, r.cmTrend, r.cmAvg30, r.yytJpy, r.crJpy ?? null]);
       hist[r.id] = series;
     }
     writeFileSync(file, JSON.stringify(hist));
@@ -182,6 +207,13 @@ async function main() {
     }
     await new Promise((r) => setTimeout(r, 300));
   }
+  // Card Rush box/pack prices (listed by set name).
+  for (const x of sealed) {
+    const rush = await cardrushSealed(x.setName).catch(() => null);
+    const p = rush?.[x.kind];
+    if (p) Object.assign(x, { crJpy: p.priceJpy, crStock: p.stock, crBuyJpy: p.buyJpy, crUrl: p.url });
+  }
+  log(`sealed products: ${sealed.length} (${sealed.filter((x) => x.crJpy).length} with Card Rush price)`);
   log(`sealed products: ${sealed.length} (${sealed.filter((x) => x.snkAskJpy).length} with SNKRDUNK price)`);
 
   // A partial scan (SCAN_SETS) refreshes only its sets and keeps the rest of the last scan.

@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import type { FxRates, SealedItem } from '../../lib/types';
 import { api, useAsync } from '../api';
 import { fmtEur, fmtJpy, fmtPct, fmtSigned, marginClass } from '../format';
-import { computeMargin } from '../margin';
-import type { SellRef } from '../state';
+import { computeMargin, pickBuy, sealedBuyOptions } from '../margin';
+import type { Settings, SellRef } from '../state';
 import { AddSheet } from './AddSheet';
 import { PriceChart } from './PriceChart';
 import { Chips } from './ui';
@@ -14,17 +14,17 @@ export function sealedSell(s: SealedItem, ref: SellRef) {
   return ref === 'avg30' ? s.cmAvg30 ?? s.cmTrend : ref === 'low' ? s.cmLow ?? s.cmTrend : s.cmTrend;
 }
 
-export function sealedMargin(s: SealedItem, ref: SellRef, fx: FxRates) {
-  return computeMargin(s.snkAskJpy ? { source: 'snkrdunk', label: 'SNKRDUNK', jpy: s.snkAskJpy } : null, sealedSell(s, ref), fx.jpyToEur);
+export function sealedMargin(s: SealedItem, settings: Settings, fx: FxRates) {
+  return computeMargin(pickBuy(sealedBuyOptions(s, settings.includeSoldOut), settings.buySource, true), sealedSell(s, settings.sellRef), fx.jpyToEur);
 }
 
 type Range = 'oneMonth' | 'threeMonths' | 'all';
 
 /** Detail sheet for a booster box / pack: prices, margin, sold-price chart, links, add to collection. */
-export function SealedSheet({ item, fx, sellRef, onClose }: { item: SealedItem; fx: FxRates; sellRef: SellRef; onClose: () => void }) {
+export function SealedSheet({ item, fx, settings, onClose }: { item: SealedItem; fx: FxRates; settings: Settings; onClose: () => void }) {
   const [range, setRange] = useState<Range>('threeMonths');
   const [adding, setAdding] = useState(false);
-  const m = sealedMargin(item, sellRef, fx);
+  const m = sealedMargin(item, settings, fx);
   const chart = useAsync(() => (item.snkId ? api.sealedChart(item.snkId, range) : Promise.resolve([])), [item.snkId, range]);
   const series = useMemo(() => {
     const pts = (chart.data ?? []).map((p) => ({ t: p.t, v: p.v * fx.jpyToEur }));
@@ -70,8 +70,8 @@ export function SealedSheet({ item, fx, sellRef, onClose }: { item: SealedItem; 
         <div className="margin-flow">
           <div>
             <small>Kauf in Japan</small>
-            <strong>{fmtJpy(item.snkAskJpy)}</strong>
-            <span className="muted">≈ {fmtEur(m.buyEur)} · SNKRDUNK</span>
+            <strong>{fmtJpy(m.buy?.jpy)}</strong>
+            <span className="muted">≈ {fmtEur(m.buyEur)} · {m.buy ? `${m.buy.label}${m.buy.note ? ` (${m.buy.note})` : ''}` : 'kein Angebot'}</span>
           </div>
           <div className="arrow">→</div>
           <div>
@@ -94,7 +94,17 @@ export function SealedSheet({ item, fx, sellRef, onClose }: { item: SealedItem; 
             {chart.loading && !chart.data ? <div className="sk sk-chart" /> : <PriceChart height={180} series={series} />}
           </>
         )}
+        {item.crJpy != null && (
+          <p className="hint">
+            Card Rush: Verkauf {fmtJpy(item.crJpy)} ({item.crStock ? `${item.crStock} auf Lager` : 'ausverkauft'}) · Ankauf {fmtJpy(item.crBuyJpy)}
+          </p>
+        )}
         <div className="links">
+          {item.crUrl && (
+            <a className="link-btn" href={item.crUrl} target="_blank" rel="noreferrer">
+              Card Rush ↗
+            </a>
+          )}
           <a className="link-btn" href={item.cmUrl} target="_blank" rel="noreferrer">
             Cardmarket ↗
           </a>
