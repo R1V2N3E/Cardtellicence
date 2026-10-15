@@ -136,6 +136,7 @@ export interface Opportunity {
   cmTrend: number | null;
   cmAvg30: number | null;
   cmLow: number | null;
+  cmId?: number | null; // Cardmarket idProduct (for live re-pricing)
   yytJpy: number | null;
   yytStock: number | null;
   yytUrl: string | null;
@@ -178,8 +179,8 @@ export interface OpportunityFile {
   sealed?: SealedItem[];
 }
 
-/** History file per set: cardId -> rows of [yyyy-mm-dd, cmTrend, cmAvg30, yytJpy, crJpy?]. */
-export type HistoryFile = Record<string, [string, number | null, number | null, number | null, (number | null)?][]>;
+/** History file per set: cardId -> rows of [yyyy-mm-dd, cmTrend, cmAvg30, yytJpy, crJpy?, crBuyJpy?]. */
+export type HistoryFile = Record<string, [string, number | null, number | null, number | null, (number | null)?, (number | null)?][]>;
 
 export interface ChartPoint {
   t: number;

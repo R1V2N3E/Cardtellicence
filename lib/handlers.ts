@@ -1,10 +1,11 @@
 // Web-standard request handlers shared by the Vercel functions (api/*.ts) and the Vite dev server.
 import { cardrushSealed, cardrushSet, findCardrush, type CardRushPrice } from './cardrush.js';
+import { officialPrices } from './cardmarket.js';
 import { getFx } from './fx.js';
 import { findPriceCharting } from './pricecharting.js';
 import { buildReport } from './report.js';
 import { search } from './search.js';
-import { cached, getJson, mapLimit } from './http.js';
+import { cached, dropCached, getJson, mapLimit } from './http.js';
 import { identifyConfigured, matchReading, readCard } from './identify.js';
 import { searchMercari } from './mercari.js';
 import { getSnkrdunkSealedChart, packImage, sealedPrices } from './sealed.js';
@@ -12,7 +13,7 @@ import { externalSnkId, getExternalCard, isExternalId } from './external.js';
 import { cardmarketFor } from './prices.js';
 import { findSnkrdunk, getSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
 import { formatNumber, getCard, getRawCard, printedTotal } from './tcgdex.js';
-import type { OpportunityFile } from './types.js';
+import type { Opportunity, OpportunityFile, SealedItem } from './types.js';
 
 function json(data: unknown, maxAge: number, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -169,6 +170,9 @@ export async function identifyHandler(req: Request) {
 /** GET ?ids=SV2a-201,M2-110 → current Cardmarket prices (official price guide) per card. */
 export async function pricesHandler(req: Request) {
   const origin = new URL(req.url).origin;
+  // ?fresh=1 (refresh in the app): re-read Card Rush instead of using the 30-minute cache.
+  const fresh = new URL(req.url).searchParams.get('fresh') === '1';
+  if (fresh) dropCached('cr:');
   const ids = (new URL(req.url).searchParams.get('ids') ?? '').split(',').filter((id) => CARD_ID.test(id)).slice(0, 150);
   try {
     const fx = await getFx().catch(() => null);
@@ -222,7 +226,7 @@ export async function pricesHandler(req: Request) {
         },
       ] as const;
     });
-    return json({ prices: Object.fromEntries(entries), fetchedAt: new Date().toISOString() }, 600);
+    return json({ prices: Object.fromEntries(entries), fetchedAt: new Date().toISOString() }, fresh ? 0 : 600);
   } catch (e) {
     return fail(e);
   }
@@ -280,6 +284,49 @@ export async function pushHandler(req: Request) {
       return json({ ok: true }, 0);
     }
     return fail('bad request', 400);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/**
+ * Live re-pricing of the daily scan (refresh in the app): GET ?sets=SV2a,SM9 returns the current
+ * Cardmarket price guide values and Card Rush prices for every scanned card and sealed product of
+ * those sets. SNKRDUNK asks stay from the scan (its rate limit doesn't allow a full re-read).
+ */
+export async function liveHandler(req: Request) {
+  const url = new URL(req.url);
+  const sets = (url.searchParams.get('sets') ?? '').split(',').filter((s) => /^[A-Za-z0-9.+-]{1,20}$/.test(s)).slice(0, 12);
+  if (!sets.length) return fail('sets required', 400);
+  if (url.searchParams.get('fresh') === '1') dropCached('cr:');
+  try {
+    const scan = await cached('scan-file', 5 * 60_000, () => getJson<OpportunityFile>(`${url.origin}/data/opportunities.json`));
+    const wanted = new Set(sets);
+    const items: Record<string, Partial<Opportunity>> = {};
+    const sealed: Record<string, Partial<SealedItem>> = {};
+    await mapLimit(sets, 4, async (setId) => {
+      const cr = await cardrushSet(setId).catch(() => null);
+      for (const o of scan.items.filter((i) => i.setId === setId)) {
+        const cm = o.cmId ? await officialPrices(o.cmId, '').catch(() => null) : null;
+        const rush = cr?.get(o.number);
+        items[o.id] = {
+          ...(cm && { cmTrend: cm.trend, cmAvg30: cm.avg30, cmLow: cm.low }),
+          ...(cr && { crJpy: rush?.priceJpy ?? null, crStock: rush?.stock ?? null, crBuyJpy: rush?.buyJpy ?? null, crId: rush?.productId ?? null }),
+        };
+      }
+      const products = (scan.sealed ?? []).filter((x) => x.setId === setId);
+      if (!products.length) return;
+      const rush = await cardrushSealed(products[0].setName).catch(() => null);
+      for (const x of products) {
+        const cm = await sealedPrices(x.id).catch(() => null);
+        const p = rush?.[x.kind];
+        sealed[x.id] = {
+          ...(cm && { cmTrend: cm.trend, cmAvg30: cm.avg30, cmLow: cm.low }),
+          ...(rush && { crJpy: p?.priceJpy ?? null, crStock: p?.stock ?? null, crBuyJpy: p?.buyJpy ?? null, crUrl: p?.url ?? null }),
+        };
+      }
+    });
+    return json({ items, sealed, sets: [...wanted], at: new Date().toISOString() }, url.searchParams.get('fresh') === '1' ? 0 : 300);
   } catch (e) {
     return fail(e);
   }

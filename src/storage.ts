@@ -4,7 +4,7 @@
 // - restores from that copy if localStorage was ever cleared.
 const DB = 'cardtellicence'; // original app name; kept so saved data stays readable
 const STORE = 'kv';
-export const PERSISTED_KEYS = ['ct-collection', 'ct-watch', 'ct-settings', 'ct-portfolio-history', 'ct-portfolio-ticks', 'ct-portfolio-history-cr', 'ct-portfolio-ticks-cr', 'ct-access-code', 'ct-push'];
+export const PERSISTED_KEYS = ['ct-collection', 'ct-watch', 'ct-settings', 'ct-portfolio-history', 'ct-portfolio-ticks', 'ct-portfolio-history-cr', 'ct-portfolio-ticks-cr', 'ct-portfolio-history-crbuy', 'ct-portfolio-ticks-crbuy', 'ct-access-code', 'ct-push'];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 

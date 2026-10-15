@@ -51,7 +51,8 @@ export function PortfolioChart({
     };
   }, [setIds]);
 
-  const cr = valuation === 'cardrush';
+  const cr = valuation !== 'cardmarket';
+  const col = valuation === 'cardrushBuy' ? 5 : 4; // history column: Card Rush sell or buy price
   const { series, delta7, delta24 } = useMemo(() => {
     const now = Date.now();
     const value = (pick: (p: LivePrice) => number | null) =>
@@ -77,7 +78,8 @@ export function PortfolioChart({
       for (const i of items) {
         const row = histories[i.setId]?.[i.cardId]?.find(([day]) => day === d);
         // Card Rush valuation reads the scan's Card Rush column (JPY), else Cardmarket's trend.
-        const day = cr ? (row?.[4] != null && jpyToEur ? row[4] * jpyToEur : null) : row?.[1];
+        const crJpy = row?.[col] as number | null | undefined;
+        const day = cr ? (crJpy != null && jpyToEur ? crJpy * jpyToEur : null) : row?.[1];
         const v = day ?? prices[i.cardId]?.trend ?? null;
         sum += (v ?? 0) * factor(i) * i.qty;
       }
@@ -114,7 +116,7 @@ export function PortfolioChart({
       delta7: today - lookback[1].v,
       delta24: base24 ? today - base24.v : null,
     };
-  }, [items, prices, histories, snapshots, ticks, range, factor, cr, jpyToEur]);
+  }, [items, prices, histories, snapshots, ticks, range, factor, cr, col, jpyToEur]);
 
   if (!items.length) return null;
   return (

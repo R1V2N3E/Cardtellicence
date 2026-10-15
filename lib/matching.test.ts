@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeMargin, pickBuy, type BuyOption } from '../src/margin';
+import { computeMargin, costModel, pickBuy, reverseMargin, type BuyOption } from '../src/margin';
 import { englishName, findDexIds } from './pokedex';
 import { formatNumber } from './tcgdex';
 import { parseYuyuteiList, yuyuteiCode } from './yuyutei';
@@ -150,5 +150,31 @@ describe('net margin', () => {
     const m = computeMargin({ source: 'snkrdunk', label: 'SNKRDUNK', jpy: 16000 }, 200, 1 / 160);
     expect(m.marginEur).toBeCloseTo(100);
     expect(m.costs).toBeNull();
+  });
+});
+
+describe('cost switches and Germany → Japan', () => {
+  const base = {
+    net: true, proxyPct: 5, shipEur: 3, shipSealedEur: 8, dutyPct: 0, vatPct: 19, sellChannel: 'cardmarket', revShipEur: 4, revTaxPct: 10, revBuyRef: 'trend',
+    costOn: { proxy: true, ship: true, duty: true, vat: true, sellFee: true, revShip: true, revTax: false },
+  } as unknown as import('../src/state').Settings;
+
+  it('drops a cost that is switched off', () => {
+    const noVat = costModel({ ...base, costOn: { ...base.costOn, vat: false } })!;
+    expect(noVat.vatPct).toBe(0);
+    expect(noVat.proxyPct).toBe(5);
+    expect(costModel({ ...base, net: false })).toBeNull();
+  });
+
+  it('prices a Germany → Japan deal from the Cardmarket buy and the Card Rush buyback', () => {
+    const d = reverseMargin({ cmTrend: 100, cmAvg30: 90, cmLow: 80, crBuyJpy: 24000 }, base, 1 / 160)!;
+    expect(d.buyEur).toBe(100);
+    expect(d.payoutEur).toBeCloseTo(150);
+    expect(d.marginEur).toBeCloseTo(150 - 104);
+    const low = reverseMargin({ cmTrend: 100, cmAvg30: 90, cmLow: 80, crBuyJpy: 24000 }, { ...base, revBuyRef: 'low' }, 1 / 160)!;
+    expect(low.buyEur).toBe(80);
+    // Japanese import tax only when switched on and above ¥10,000
+    const taxed = reverseMargin({ cmTrend: 100, cmAvg30: 90, cmLow: 80, crBuyJpy: 24000 }, { ...base, costOn: { ...base.costOn, revTax: true } }, 1 / 160)!;
+    expect(taxed.taxEur).toBeCloseTo(10.4);
   });
 });

@@ -4,7 +4,7 @@
 export const UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 
-type Entry = { expires: number; value: Promise<unknown> };
+type Entry = { expires: number; value: Promise<unknown>; at: number };
 const cache = new Map<string, Entry>();
 const MAX_ENTRIES = 500;
 
@@ -13,7 +13,7 @@ export function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): P
   const hit = cache.get(key);
   if (hit && hit.expires > now) return hit.value as Promise<T>;
   const value = load();
-  cache.set(key, { expires: now + ttlMs, value });
+  cache.set(key, { expires: now + ttlMs, value, at: now });
   // Failed loads must not be cached.
   value.catch(() => cache.delete(key));
   if (cache.size > MAX_ENTRIES) {
@@ -21,6 +21,15 @@ export function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): P
     if (cache.size > MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
   }
   return value;
+}
+
+/**
+ * Forget cached entries under a prefix so the next call fetches fresh data ("refresh" in the
+ * app). Entries younger than minAgeMs stay, so repeated refreshes can't hammer a source.
+ */
+export function dropCached(prefix: string, minAgeMs = 60_000) {
+  const now = Date.now();
+  for (const [k, e] of cache) if (k.startsWith(prefix) && now - e.at >= minAgeMs) cache.delete(k);
 }
 
 export class HttpError extends Error {

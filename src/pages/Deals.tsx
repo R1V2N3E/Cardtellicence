@@ -6,7 +6,7 @@ import { BUY_LABEL, opportunityMargin, reverseMargin, SELL_LABEL } from '../marg
 import { useSettings } from '../state';
 import { usePullToRefresh, useSwipeTabs } from '../gestures';
 import { SealedSheet, sealedLabel, sealedMargin } from '../components/SealedSheet';
-import type { SealedItem } from '../../lib/types';
+import type { Opportunity, SealedItem } from '../../lib/types';
 
 type Sort = 'margin' | 'roi' | 'value';
 
@@ -21,18 +21,78 @@ function numberMatches(number: string, q: string): boolean {
 export function Deals() {
   const [settings] = useSettings();
   const [refresh, setRefresh] = useState(0);
-  const { data, error, loading } = useAsync(() => loadOpportunities(refresh > 0), [refresh]);
+  const { data: scanData, error, loading } = useAsync(() => loadOpportunities(refresh > 0), [refresh]);
+  // Live prices fetched in the app on refresh, laid over the daily scan.
+  const [live, setLive] = useState<{ items: Record<string, Partial<Opportunity>>; sealed: Record<string, Partial<SealedItem>>; at: string | null; done: number; total: number }>({
+    items: {},
+    sealed: {},
+    at: null,
+    done: 0,
+    total: 0,
+  });
+  const data = useMemo(() => {
+    if (!scanData || !live.at) return scanData;
+    return {
+      ...scanData,
+      items: scanData.items.map((o) => (live.items[o.id] ? { ...o, ...live.items[o.id] } : o)),
+      sealed: scanData.sealed?.map((x) => (live.sealed[x.id] ? { ...x, ...live.sealed[x.id] } : x)),
+    };
+  }, [scanData, live]);
   // Live ECB rate, so margins follow the current exchange rate rather than the scan's.
   const { data: liveFx, loading: fxLoading } = useAsync(() => api.fx(refresh > 0), [refresh]);
   const fx = liveFx ?? data?.fx;
   const busy = loading || fxLoading;
   const [toast, setToast] = useState<string | null>(null);
   const lastRefresh = useRef(0);
+  // Refresh: re-read Card Rush and Cardmarket for every set, a few sets per request. Runs on its
+  // own (not tied to the scan file reloading at the same time) and stops only when leaving the page.
+  const [liveBusy, setLiveBusy] = useState(false);
+  const scanRef = useRef(scanData);
+  scanRef.current = scanData;
+  const mounted = useRef(true);
   useEffect(() => {
-    if (!refresh || busy || lastRefresh.current === refresh) return;
+    mounted.current = true;
+    return () => void (mounted.current = false);
+  }, []);
+  useEffect(() => {
+    if (!refresh || lastRefresh.current === refresh) return;
     lastRefresh.current = refresh;
-    setToast(error ? `Aktualisierung fehlgeschlagen: ${error}` : `Aktualisiert ✓ · Preise vom Scan ${ago(data?.generatedAt)} · Kurs EZB ${fx?.date ?? ''}`);
-  }, [refresh, busy]);
+    void (async () => {
+      // On the very first load the set list comes with the scan file.
+      const scan = scanRef.current ?? (await loadOpportunities().catch(() => null));
+      if (!scan) return;
+      const sets = scan.sets.map((s) => s.id);
+      const queue: string[][] = [];
+      for (let i = 0; i < sets.length; i += 6) queue.push(sets.slice(i, i + 6));
+      let failed = 0;
+      setLiveBusy(true);
+      setLive((l) => ({ ...l, done: 0, total: sets.length }));
+      const worker = async () => {
+        for (let c = queue.shift(); c && mounted.current; c = queue.shift()) {
+          const patch = await api.live(c, true).catch(() => null);
+          if (!patch) failed += c.length;
+          if (mounted.current)
+            setLive((l) => ({
+              items: { ...l.items, ...patch?.items },
+              sealed: { ...l.sealed, ...patch?.sealed },
+              at: patch?.at ?? l.at,
+              done: l.done + c.length,
+              total: l.total,
+            }));
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+      if (!mounted.current) return;
+      setLiveBusy(false);
+      setToast(
+        failed === sets.length
+          ? 'Live-Aktualisierung fehlgeschlagen – es gelten die Preise vom Scan.'
+          : failed
+            ? `Teilweise aktualisiert: ${sets.length - failed} von ${sets.length} Sets live`
+            : `Live-Preise ✓ Card Rush & Cardmarket für ${sets.length} Sets`,
+      );
+    })();
+  }, [refresh]);
   // The toast closes itself; its own effect so later re-renders can't cancel the timer.
   useEffect(() => {
     if (!toast) return;
@@ -112,11 +172,11 @@ export function Deals() {
         title="Deals"
         sub={
           data
-            ? `Kauf ${settings.buySource === 'mercari' ? 'Günstigster (Mercari nicht im Scan)' : BUY_LABEL[settings.buySource]} → Verkauf ${SELL_LABEL[settings.sellRef]}${settings.net ? ' · netto' : ''} · Scan ${ago(data.generatedAt)}${Date.now() - Date.parse(data.generatedAt) > 30 * 3600_000 ? ' ⚠︎ veraltet' : ''}`
+            ? `Kauf ${settings.buySource === 'mercari' ? 'Günstigster (Mercari nicht im Scan)' : BUY_LABEL[settings.buySource]} → Verkauf ${SELL_LABEL[settings.sellRef]}${settings.net ? ' · netto' : ''} · ${liveBusy ? `Live ${live.done}/${live.total} Sets…` : live.at ? `Live ${ago(live.at)}` : `Scan ${ago(data.generatedAt)}`}${!live.at && Date.now() - Date.parse(data.generatedAt) > 30 * 3600_000 ? ' ⚠︎ veraltet' : ''}`
             : 'Margen Japan → Deutschland'
         }
         right={
-          <button className={`icon-btn ${busy ? 'spinning' : ''}`} disabled={busy} onClick={() => setRefresh((r) => r + 1)} aria-label="Neu laden">
+          <button className={`icon-btn ${busy || liveBusy ? 'spinning' : ''}`} disabled={busy || liveBusy} onClick={() => setRefresh((r) => r + 1)} aria-label="Neu laden">
             <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
           </button>
         }
@@ -171,7 +231,7 @@ export function Deals() {
       {kind === 'reverse' && (
         <>
           <p className="filter-note reverse-note">
-            In Deutschland auf Cardmarket kaufen ({SELL_LABEL[settings.sellRef]}) und an Card Rush verkaufen (Ankaufspreis 買取). Card Rush kauft per Post
+            In Deutschland auf Cardmarket kaufen ({SELL_LABEL[settings.revBuyRef ?? 'trend']}) und an Card Rush verkaufen (Ankaufspreis 買取). Card Rush kauft per Post
             nur mit japanischer Adresse und Ausweis an und zahlt den vollen Preis nur für einwandfreie Karten – praktisch also für Reisen nach Japan
             oder mit Partner vor Ort.
           </p>
@@ -196,7 +256,7 @@ export function Deals() {
                     </div>
                     <div className="deal-prices">
                       <span className="jp">
-                        🇩🇪 {fmtEur(r.buyEur)} <small>Cardmarket{settings.net ? ` + ${fmtEur(r.costEur - r.buyEur)} Versand` : ''}</small>
+                        🇩🇪 {fmtEur(r.buyEur)} <small>Cardmarket{r.costEur - r.buyEur > 0.005 ? ` + ${fmtEur(r.costEur - r.buyEur)} Kosten` : ''}</small>
                       </span>
                       <span className="de">
                         🇯🇵 {fmtJpy(o.crBuyJpy)} <small>Card Rush Ankauf ≈ {fmtEur(r.payoutEur)}</small>

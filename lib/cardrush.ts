@@ -105,19 +105,18 @@ export function packCodes(setId: string): string[] {
  */
 export function cardrushSet(setId: string): Promise<Map<string, CardRushPrice>> {
   return cached(`cr:set:${setId}`, 30 * 60_000, async () => {
+    // Card Rush files most of an older set under "sm6" but a few cards under "SM6": read every
+    // spelling and merge. Only rows whose code is exactly this set count (never "SM9a" for "SM9").
+    const out = new Map<string, CardRushPrice>();
     for (const code of packCodes(setId)) {
-      const rows = await allPages([['pack_code', code]]);
-      if (!rows.length) continue;
-      const out = new Map<string, CardRushPrice>();
-      for (const r of rows) {
-        if (PARALLEL.test(r.extra_difference ?? '')) continue;
+      for (const r of await allPages([['pack_code', code]])) {
+        if (r.pack_code?.toLowerCase() !== setId.toLowerCase() || PARALLEL.test(r.extra_difference ?? '')) continue;
         const p = toPrice(r);
         const prev = p && out.get(p.number);
         if (p && (!prev || better(p, prev))) out.set(p.number, p);
       }
-      return out;
     }
-    return new Map();
+    return out;
   });
 }
 

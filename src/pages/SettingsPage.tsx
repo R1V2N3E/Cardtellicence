@@ -3,11 +3,12 @@ import { requestPersistence, storageStatus, type StorageStatus } from '../storag
 import { DEFAULT_PUSH, disablePush, enablePush, pushServerStatus, pushSupport, readPush, usePushLocal, type PushLocal } from '../push';
 import { Chips, Header } from '../components/ui';
 import { BUY_LABEL, CHANNEL, SELL_LABEL } from '../margin';
-import { DEFAULT_SETTINGS, readAccessCode, useCollection, useSettings, useWatchlist, writeAccessCode, type BuySource, type SellChannel, type SellRef, type Settings, type Valuation } from '../state';
+import { DEFAULT_SETTINGS, readAccessCode, useCollection, useSettings, useWatchlist, writeAccessCode, type BuySource, type CostItem, type SellChannel, type SellRef, type Valuation } from '../state';
 
 export function SettingsPage() {
   const [s, setS] = useSettings();
   const set = <K extends keyof typeof s>(k: K, v: (typeof s)[K]) => setS({ ...s, [k]: v });
+  const cost = (k: CostItem, v: boolean) => setS({ ...s, costOn: { ...s.costOn, [k]: v } });
   const [code, setCode] = useState(readAccessCode());
   const collection = useCollection();
   const watch = useWatchlist();
@@ -50,13 +51,14 @@ export function SettingsPage() {
           value={s.valuation}
           onChange={(v) => set('valuation', v)}
           options={[
-            ['cardrush', 'Card Rush (Japan)'],
+            ['cardrush', 'Card Rush Verkauf'],
+            ['cardrushBuy', 'Card Rush Ankauf'],
             ['cardmarket', 'Cardmarket (DE)'],
           ]}
         />
         <p className="hint">
-          Card Rush ist in Japan die wichtigste Orientierung für Kartenwerte: Shop-Verkaufspreis in ¥, live umgerechnet in €, mehrmals täglich aktualisiert.
-          Karten ohne Card-Rush-Preis werden mit Cardmarket bewertet.
+          Card Rush ist in Japan die wichtigste Orientierung für Kartenwerte, live in € umgerechnet und mehrmals täglich aktualisiert. „Verkauf“ =
+          Shop-Preis (Marktwert), „Ankauf“ = was Card Rush dir zahlt. Karten ohne Card-Rush-Preis werden mit Cardmarket bewertet.
         </p>
       </section>
       <section className="panel">
@@ -87,20 +89,33 @@ export function SettingsPage() {
         </label>
         {s.net && (
           <>
-            <NumberField label="Proxy-/Zahlungsgebühr" unit="%" value={s.proxyPct} onChange={(v) => set('proxyPct', v)} />
-            <NumberField label="Versand JP → DE pro Karte" unit="€" value={s.shipEur} onChange={(v) => set('shipEur', v)} />
-            <NumberField label="Versand pro Box/Pack" unit="€" value={s.shipSealedEur} onChange={(v) => set('shipSealedEur', v)} />
-            <NumberField label="Zoll" unit="%" value={s.dutyPct} onChange={(v) => set('dutyPct', v)} />
-            <NumberField label="Einfuhrumsatzsteuer" unit="%" value={s.vatPct} onChange={(v) => set('vatPct', v)} />
+            <h3 className="sub-h2">Kauf in Japan → Verkauf in Deutschland</h3>
+            <NumberField label="Proxy-/Zahlungsgebühr" unit="%" value={s.proxyPct} onChange={(v) => set('proxyPct', v)} on={s.costOn.proxy} onToggle={(v) => cost('proxy', v)} />
+            <NumberField label="Versand JP → DE pro Karte" unit="€" value={s.shipEur} onChange={(v) => set('shipEur', v)} on={s.costOn.ship} onToggle={(v) => cost('ship', v)} />
+            <NumberField label="Versand pro Box/Pack" unit="€" value={s.shipSealedEur} onChange={(v) => set('shipSealedEur', v)} on={s.costOn.ship} onToggle={(v) => cost('ship', v)} />
+            <NumberField label="Zoll" unit="%" value={s.dutyPct} onChange={(v) => set('dutyPct', v)} on={s.costOn.duty} onToggle={(v) => cost('duty', v)} />
+            <NumberField label="Einfuhrumsatzsteuer" unit="%" value={s.vatPct} onChange={(v) => set('vatPct', v)} on={s.costOn.vat} onToggle={(v) => cost('vat', v)} />
+            <label className="toggle">
+              <input type="checkbox" checked={s.costOn.sellFee} onChange={(e) => cost('sellFee', e.target.checked)} />
+              Verkaufsgebühr abziehen
+            </label>
+            {s.costOn.sellFee && (
+              <div className="field-col">
+                <span>Verkauf über</span>
+                <Chips<SellChannel>
+                  value={s.sellChannel}
+                  onChange={(v) => set('sellChannel', v)}
+                  options={(Object.keys(CHANNEL) as SellChannel[]).map((k) => [k, CHANNEL[k].label])}
+                />
+              </div>
+            )}
+            <h3 className="sub-h2">Kauf in Deutschland → Verkauf in Japan</h3>
             <div className="field-col">
-              <span>Verkauf über</span>
-              <Chips<SellChannel>
-                value={s.sellChannel}
-                onChange={(v) => set('sellChannel', v)}
-                options={(Object.keys(CHANNEL) as SellChannel[]).map((k) => [k, CHANNEL[k].label])}
-              />
+              <span>Kaufpreis Cardmarket</span>
+              <Chips<SellRef> value={s.revBuyRef} onChange={(v) => set('revBuyRef', v)} options={(Object.keys(SELL_LABEL) as SellRef[]).map((k) => [k, SELL_LABEL[k]])} />
             </div>
-            <NumberField label="Versand DE → JP pro Karte (Ankauf-Deals)" unit="€" value={s.revShipEur} onChange={(v) => set('revShipEur', v)} />
+            <NumberField label="Versand pro Karte (zu dir + nach Japan)" unit="€" value={s.revShipEur} onChange={(v) => set('revShipEur', v)} on={s.costOn.revShip} onToggle={(v) => cost('revShip', v)} />
+            <NumberField label="Japan-Einfuhrsteuer (Post über ¥10.000)" unit="%" value={s.revTaxPct} onChange={(v) => set('revTaxPct', v)} on={s.costOn.revTax} onToggle={(v) => cost('revTax', v)} />
           </>
         )}
         <p className="hint">
@@ -205,17 +220,40 @@ export function SettingsPage() {
   );
 }
 
-function NumberField({ label, unit, value, onChange }: { label: string; unit: string; value: number; onChange: (v: Settings[keyof Settings] & number) => void }) {
+function NumberField({
+  label,
+  unit,
+  value,
+  onChange,
+  on,
+  onToggle,
+}: {
+  label: string;
+  unit: string;
+  value: number;
+  onChange: (v: number) => void;
+  /** With a switch: the cost can be turned off without losing its value. */
+  on?: boolean;
+  onToggle?: (on: boolean) => void;
+}) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   return (
-    <label className="field">
-      {label}
+    <label className={`field ${on === false ? 'off' : ''}`}>
+      {onToggle ? (
+        <span className="field-toggle">
+          <input type="checkbox" checked={on} onChange={(e) => onToggle(e.target.checked)} />
+          {label}
+        </span>
+      ) : (
+        label
+      )}
       <span className="num-input">
         <input
           className="input"
           inputMode="decimal"
           value={text}
+          disabled={on === false}
           onChange={(e) => setText(e.target.value)}
           onBlur={() => {
             const v = Number(text.replace(',', '.'));

@@ -1,5 +1,5 @@
 import type { CardReport, Opportunity, SealedItem } from '../lib/types';
-import type { BuySource, SellChannel, SellRef, Settings } from './state';
+import type { BuySource, CostItem, SellChannel, SellRef, Settings } from './state';
 
 export interface BuyOption {
   source: Exclude<BuySource, 'cheapest'>;
@@ -46,14 +46,27 @@ export const CHANNEL: Record<SellChannel, { label: string; feePct: number }> = {
 };
 
 /** The cost model of the current settings, or null when margins are shown gross. */
+/** Which costs count (older saved settings, e.g. on the push server, have no switches yet). */
+const costsOn = (s: Settings): Record<CostItem, boolean> => ({
+  proxy: true,
+  ship: true,
+  duty: true,
+  vat: true,
+  sellFee: true,
+  revShip: true,
+  revTax: false,
+  ...(s.costOn as Partial<Record<CostItem, boolean>> | undefined),
+});
+
 export function costModel(s: Settings, sealed = false): CostModel | null {
   if (!s.net) return null;
+  const on = costsOn(s);
   return {
-    proxyPct: s.proxyPct,
-    shipEur: sealed ? s.shipSealedEur : s.shipEur,
-    dutyPct: s.dutyPct,
-    vatPct: s.vatPct,
-    sellFeePct: CHANNEL[s.sellChannel].feePct,
+    proxyPct: on.proxy ? s.proxyPct : 0,
+    shipEur: on.ship ? (sealed ? s.shipSealedEur : s.shipEur) : 0,
+    dutyPct: on.duty ? s.dutyPct : 0,
+    vatPct: on.vat ? s.vatPct : 0,
+    sellFeePct: on.sellFee ? CHANNEL[s.sellChannel].feePct : 0,
   };
 }
 
@@ -166,17 +179,26 @@ export function reportSell(r: CardReport, ref: SellRef): number | null {
 /** Germany → Japan: buy on Cardmarket, sell to Card Rush's buyback (買取). */
 export interface ReverseDeal {
   buyEur: number; // Cardmarket price paid
-  costEur: number; // buy + shipping to Japan
+  shipEur: number;
+  taxEur: number; // Japanese import consumption tax
+  costEur: number; // everything paid
   payoutEur: number; // Card Rush buy price in EUR
   marginEur: number;
   roi: number;
 }
 
-export function reverseMargin(o: Opportunity, s: Settings, jpyToEur: number): ReverseDeal | null {
-  const buy = s.sellRef === 'low' ? o.cmLow ?? o.cmTrend : s.sellRef === 'avg30' ? o.cmAvg30 ?? o.cmTrend : o.cmTrend;
+type ReverseInput = Pick<Opportunity, 'cmTrend' | 'cmAvg30' | 'cmLow'> & { crBuyJpy?: number | null };
+
+export function reverseMargin(o: ReverseInput, s: Settings, jpyToEur: number): ReverseDeal | null {
+  const ref = s.revBuyRef ?? 'trend';
+  const buy = ref === 'low' ? o.cmLow ?? o.cmTrend : ref === 'avg30' ? o.cmAvg30 ?? o.cmTrend : o.cmTrend;
   if (!buy || !o.crBuyJpy) return null;
-  const costEur = buy + (s.net ? s.revShipEur : 0);
+  const on = costsOn(s);
+  const shipEur = s.net && on.revShip ? s.revShipEur : 0;
+  // Japan charges consumption tax on mailed imports above ¥10,000 (travellers bring cards in tax-free).
+  const taxEur = s.net && on.revTax && buy / jpyToEur > 10_000 ? ((buy + shipEur) * s.revTaxPct) / 100 : 0;
+  const costEur = buy + shipEur + taxEur;
   const payoutEur = o.crBuyJpy * jpyToEur;
   const marginEur = payoutEur - costEur;
-  return { buyEur: buy, costEur, payoutEur, marginEur, roi: marginEur / costEur };
+  return { buyEur: buy, shipEur, taxEur, costEur, payoutEur, marginEur, roi: marginEur / costEur };
 }

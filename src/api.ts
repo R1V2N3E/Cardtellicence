@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import type { IdentifyResult } from '../lib/identify';
-import type { CardReport, CardSummary, ChartPoint, FxRates, HistoryFile, OpportunityFile } from '../lib/types';
+import type { CardReport, CardSummary, ChartPoint, FxRates, HistoryFile, Opportunity, OpportunityFile, SealedItem } from '../lib/types';
 import { readAccessCode } from './state';
+
+/** Current prices for the cards and sealed products of some sets (see /api/live). */
+export interface LivePatch {
+  items: Record<string, Partial<Opportunity>>;
+  sealed: Record<string, Partial<SealedItem>>;
+  sets: string[];
+  at: string;
+}
 
 export interface LivePrice {
   trend: number | null;
@@ -42,8 +50,13 @@ export const api = {
   opportunities: (fresh = false) =>
     getJson<OpportunityFile>(fresh ? `/data/opportunities.json?t=${Date.now()}` : '/data/opportunities.json', fresh ? { cache: 'no-store' } : undefined),
   fx: (fresh = false) => getJson<FxRates>(fresh ? `/api/fx?t=${Date.now()}` : '/api/fx', fresh ? { cache: 'no-store' } : undefined),
-  prices: (ids: string[]) =>
-    getJson<{ prices: Record<string, LivePrice | null>; fetchedAt: string }>(`/api/prices?ids=${ids.map(encodeURIComponent).join(',')}`),
+  prices: (ids: string[], fresh = false) =>
+    getJson<{ prices: Record<string, LivePrice | null>; fetchedAt: string }>(
+      `/api/prices?ids=${ids.map(encodeURIComponent).join(',')}${fresh ? '&fresh=1' : ''}`,
+      fresh ? { cache: 'no-store' } : undefined,
+    ),
+  live: (sets: string[], fresh: boolean) =>
+    getJson<LivePatch>(`/api/live?sets=${sets.map(encodeURIComponent).join(',')}${fresh ? '&fresh=1' : ''}`, fresh ? { cache: 'no-store' } : undefined),
   identify: async (image: string): Promise<IdentifyResult> => {
     const res = await fetch('/api/identify', {
       method: 'POST',

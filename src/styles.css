@@ -572,3 +572,15 @@ a.row .row-label::after { content: ' ↗'; color: var(--accent); font-size: 11px
 .panel > .chips { flex-wrap: wrap; }
 .panel .toggle { white-space: normal; align-items: flex-start; }
 .panel .toggle input { flex: none; margin-top: 1px; }
+
+/* Scan screen fills the whole display (iOS home-screen apps otherwise show the page below). */
+html:has(.scan), html:has(.scan) body { background: #07080e; }
+.scan { min-height: 100dvh; }
+.scan-controls { padding-bottom: calc(env(safe-area-inset-bottom) + 30px); }
+.scan-camera-error { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.scan-camera-error .link-btn { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.18); color: #fff; }
+.field-toggle { display: flex; align-items: center; gap: 8px; }
+.field-toggle input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.field.off { color: var(--muted); }
+.field.off .input { opacity: 0.45; }
+.panel h3.sub-h2 { margin-top: 8px; }

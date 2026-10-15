@@ -40,7 +40,9 @@ function useStored<T>(key: string, load: () => T): [T, (v: T) => void] {
 
 export type BuySource = 'cardrush' | 'cheapest' | 'yuyutei' | 'snkrdunk' | 'mercari';
 /** What the portfolio is valued at: Card Rush (Japan's reference price) or Cardmarket. */
-export type Valuation = 'cardrush' | 'cardmarket';
+export type Valuation = 'cardrush' | 'cardrushBuy' | 'cardmarket';
+/** Every cost of a trade can be switched off on its own. */
+export type CostItem = 'proxy' | 'ship' | 'duty' | 'vat' | 'sellFee' | 'revShip' | 'revTax';
 export type SellRef = 'trend' | 'avg30' | 'avg7' | 'low';
 export type SellChannel = 'cardmarket' | 'ebay' | 'ebayPro' | 'kleinanzeigen';
 
@@ -60,6 +62,9 @@ export interface Settings {
   vatPct: number;
   sellChannel: SellChannel;
   revShipEur: number; // per card, Germany → Japan (reverse deals)
+  revTaxPct: number; // Japanese import consumption tax (mail over ¥10,000)
+  revBuyRef: SellRef; // which Cardmarket price a Germany → Japan buy is made at
+  costOn: Record<CostItem, boolean>;
   /** Grading calculator */
   gradingEur: number; // PSA fee + shipping per card
   psa10Pct: number; // expected chance of a PSA 10
@@ -82,6 +87,9 @@ export const DEFAULT_SETTINGS: Settings = {
   vatPct: 19,
   sellChannel: 'cardmarket',
   revShipEur: 4,
+  revTaxPct: 10,
+  revBuyRef: 'trend',
+  costOn: { proxy: true, ship: true, duty: true, vat: true, sellFee: true, revShip: true, revTax: false },
   gradingEur: 40,
   psa10Pct: 40,
   cardrushDefaults: true,
@@ -89,6 +97,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 function loadSettings(): Settings {
   const s = read('ct-settings', DEFAULT_SETTINGS);
+  s.costOn = { ...DEFAULT_SETTINGS.costOn, ...s.costOn };
   // Look at what is stored, not the merged defaults (which already carry the flag).
   const stored = read<Partial<Settings>>('ct-settings', {});
   return stored.cardrushDefaults ? s : { ...s, buySource: 'cardrush', valuation: 'cardrush', cardrushDefaults: true };
@@ -176,8 +185,9 @@ export function useCollection() {
 
 // Values are kept per valuation basis, so switching between Card Rush and Cardmarket never
 // draws a fake jump into the chart.
-const historyKey = (v: Valuation) => (v === 'cardrush' ? 'ct-portfolio-history-cr' : 'ct-portfolio-history');
-const ticksKey = (v: Valuation) => (v === 'cardrush' ? 'ct-portfolio-ticks-cr' : 'ct-portfolio-ticks');
+const SUFFIX: Record<Valuation, string> = { cardmarket: '', cardrush: '-cr', cardrushBuy: '-crbuy' };
+const historyKey = (v: Valuation) => `ct-portfolio-history${SUFFIX[v]}`;
+const ticksKey = (v: Valuation) => `ct-portfolio-ticks${SUFFIX[v]}`;
 
 /** Daily portfolio totals for the change figure and the value chart: [yyyy-mm-dd, EUR]. */
 export function recordPortfolioValue(value: number, v: Valuation) {

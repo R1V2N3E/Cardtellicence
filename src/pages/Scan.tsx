@@ -39,26 +39,51 @@ export function Scan() {
   const [phase, setPhase] = useState<Phase>({ kind: 'camera' });
   const [added, setAdded] = useState(0);
 
-  // Start the rear camera; stop it when leaving the page.
-  useEffect(() => {
-    let active: MediaStream | null = null;
-    let cancelled = false;
-    navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false })
-      .then((s) => {
-        if (cancelled) return s.getTracks().forEach((t) => t.stop());
-        active = s;
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Start the rear camera. iOS home-screen apps sometimes refuse the first request (app not yet
+  // in the foreground, camera busy) even when access was granted, so this can be retried by tap,
+  // and a simpler request is tried when the detailed one fails.
+  const startCamera = async () => {
+    setCameraError(null);
+    if (!navigator.mediaDevices?.getUserMedia) return setCameraError('Live-Kamera nicht verfügbar – der Auslöser öffnet die iPhone-Kamera.');
+    const attempts: MediaStreamConstraints[] = [
+      { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false },
+      { video: { facingMode: 'environment' }, audio: false },
+      { video: true, audio: false },
+    ];
+    let last: Error | null = null;
+    for (const c of attempts) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia(c);
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = s;
         setStream(s);
         const caps = (s.getVideoTracks()[0]?.getCapabilities?.() ?? {}) as { torch?: boolean };
         if (caps.torch) setTorch(false);
-      })
-      .catch((e: Error) =>
-        setCameraError(e.name === 'NotAllowedError' ? 'Kamerazugriff verweigert. In den iOS-Einstellungen erlauben oder ein Foto aus der Mediathek wählen.' : 'Kamera nicht verfügbar. Wähle ein Foto aus der Mediathek.'),
-      );
-    if (!navigator.mediaDevices) setCameraError('Kamera nicht verfügbar. Wähle ein Foto aus der Mediathek.');
+        return;
+      } catch (e) {
+        last = e as Error;
+        if (last.name === 'NotAllowedError') break; // a refusal won't change with other settings
+      }
+    }
+    setCameraError(
+      last?.name === 'NotAllowedError'
+        ? 'Live-Kamera wurde nicht freigegeben. Tippe auf „Erneut versuchen“ – oder einfach auf den Auslöser, der öffnet die iPhone-Kamera.'
+        : 'Live-Kamera nicht verfügbar – der Auslöser öffnet die iPhone-Kamera.',
+    );
+  };
+
+  useEffect(() => {
+    void startCamera();
+    // Coming back to the app: the system stops the camera, so start it again.
+    const onVisible = () => document.visibilityState === 'visible' && !streamRef.current?.active && void startCamera();
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
-      cancelled = true;
-      active?.getTracks().forEach((t) => t.stop());
+      document.removeEventListener('visibilitychange', onVisible);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
   }, []);
 
@@ -137,7 +162,14 @@ export function Scan() {
 
       <div className="scan-stage">
         {stream && <video ref={video} className="scan-video" playsInline muted autoPlay />}
-        {cameraError && <div className="scan-camera-error">{cameraError}</div>}
+        {cameraError && (
+          <div className="scan-camera-error">
+            {cameraError}
+            <button className="link-btn" onClick={() => void startCamera()}>
+              Erneut versuchen
+            </button>
+          </div>
+        )}
         <div ref={frame} className="scan-frame" style={{ aspectRatio: `${1 / CARD_RATIO}` }}>
           {torch !== null && (
             <button className={`scan-torch ${torch ? 'on' : ''}`} onClick={toggleTorch} aria-label="Licht">
@@ -152,17 +184,19 @@ export function Scan() {
       </div>
 
       <div className="scan-controls">
-        <p>Scanne die Vorderseite der Karte, um zu beginnen.</p>
+        <p>{stream?.active ? 'Scanne die Vorderseite der Karte, um zu beginnen.' : 'Tippe auf den Auslöser, um die Karte zu fotografieren.'}</p>
         <div className="scan-buttons">
           <button className="round-btn" onClick={() => fileInput.current?.click()} aria-label="Foto aus Mediathek">
             <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4" /><circle cx="15.5" cy="8.5" r="1.5" /></svg>
           </button>
-          <button className="shutter" onClick={capture} disabled={!stream} aria-label="Foto aufnehmen" />
+          <button className="shutter" onClick={() => (stream?.active ? capture() : cameraInput.current?.click())} aria-label="Foto aufnehmen" />
           <button className="round-btn" onClick={() => navigate('/portfolio')} aria-label="Sammlung">
             <svg viewBox="0 0 24 24"><path d="M7 4h11a1 1 0 0 1 1 1v13M4 7h11a1 1 0 0 1 1 1v12H5a1 1 0 0 1-1-1z" /></svg>
           </button>
         </div>
-        <input ref={fileInput} type="file" accept="image/*" hidden onChange={(e) => fromLibrary(e.target.files?.[0])} />
+        <input ref={fileInput} type="file" accept="image/*" hidden onChange={(e) => (fromLibrary(e.target.files?.[0]), (e.target.value = ''))} />
+        {/* The iPhone's own camera: works even when the live preview isn't allowed. */}
+        <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (fromLibrary(e.target.files?.[0]), (e.target.value = ''))} />
       </div>
 
       {phase.kind === 'working' && (

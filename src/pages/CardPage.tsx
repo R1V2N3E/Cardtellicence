@@ -6,7 +6,7 @@ import { api, useAsync } from '../api';
 import { PriceChart, type Series } from '../components/PriceChart';
 import { Chips, ErrorBox, Header, Spinner } from '../components/ui';
 import { ago, cardImg, fmtEur, fmtJpy, fmtPct, fmtSigned, fmtUsd, marginClass, shortDate } from '../format';
-import { BUY_LABEL, CHANNEL, computeMargin, costModel, pickBuy, type Margin, reportBuyOptions, reportSell, SELL_LABEL } from '../margin';
+import { BUY_LABEL, CHANNEL, computeMargin, costModel, pickBuy, reverseMargin, type Margin, reportBuyOptions, reportSell, SELL_LABEL } from '../margin';
 import { useCollection, useSettings, useWatchlist, type BuySource, type SellChannel, type SellRef, type Settings } from '../state';
 import { AddSheet } from '../components/AddSheet';
 import { CostLines } from '../components/CostLines';
@@ -160,6 +160,7 @@ export function CardPage() {
         {r.partial && <p className="hint loading-line">Japan-Preise werden geladen…</p>}
       </section>
 
+      <ReverseCheck r={r} settings={settings} />
       <PriceTables r={r} />
       {r.sell && (
         <section className="panel">
@@ -438,6 +439,36 @@ function RecentSales({ r }: { r: CardReport }) {
           {!r.mercari.ok && r.mercari.pending ? <SkeletonList /> : !mercari.length && <li className="muted">Keine passenden Angebote{!r.mercari.ok ? ` (${r.mercari.error})` : ''}.</li>}
         </ul>
       )}
+    </section>
+  );
+}
+
+/** The other direction: buy this card in Germany and sell it to Card Rush. */
+function ReverseCheck({ r, settings }: { r: CardReport; settings: Settings }) {
+  if (!r.cardmarket.ok || !r.cardrush.ok || !r.cardrush.buyJpy) return null;
+  const d = reverseMargin({ cmTrend: r.cardmarket.trend, cmAvg30: r.cardmarket.avg30, cmLow: r.cardmarket.low, crBuyJpy: r.cardrush.buyJpy }, settings, r.fx.jpyToEur);
+  if (!d) return null;
+  return (
+    <section className="panel">
+      <h2>🇩🇪 → 🇯🇵 Kauf in DE, Verkauf an Card Rush</h2>
+      <div className="margin-flow">
+        <div>
+          <small>Kauf Cardmarket</small>
+          <strong>{fmtEur(d.buyEur)}</strong>
+          <span className="muted">{SELL_LABEL[settings.revBuyRef]}{d.costEur - d.buyEur > 0.005 ? ` + ${fmtEur(d.costEur - d.buyEur)} Kosten` : ''}</span>
+        </div>
+        <div className="arrow">→</div>
+        <div>
+          <small>Card Rush Ankauf</small>
+          <strong>{fmtJpy(r.cardrush.buyJpy)}</strong>
+          <span className="muted">≈ {fmtEur(d.payoutEur)}</span>
+        </div>
+      </div>
+      <div className={`margin-result ${marginClass(d.marginEur)}`}>
+        <span>Marge</span>
+        <strong>{fmtSigned(d.marginEur)}</strong>
+        <span>{fmtPct(d.roi)} ROI</span>
+      </div>
     </section>
   );
 }

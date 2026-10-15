@@ -14,7 +14,7 @@ function devApi(): Plugin {
           const method = req.method ?? 'GET';
           const chunks: Buffer[] = [];
           if (method === 'POST') for await (const c of req) chunks.push(c as Buffer);
-          const request = new Request(`http://localhost${req.url}`, {
+          const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
             method,
             headers: req.headers as Record<string, string>,
             body: method === 'POST' ? Buffer.concat(chunks) : undefined,

@@ -60,11 +60,9 @@ const OUT_DIR = new URL('../public/data/', import.meta.url);
 const today = new Date().toISOString().slice(0, 10);
 const log = (...a: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
-async function scanSet(setId: string, all: boolean): Promise<Opportunity[]> {
+async function scanSet(setId: string, all: boolean, jpyToEur: number): Promise<Opportunity[]> {
   const set = await getSet(setId);
   const official = set.cardCount.official;
-  // Secret rares (numbered above the official count) carry nearly all the value. Sets
-  // without secret numbering (e.g. SV11B) are scanned in full.
   // All cards; SCAN_SECRET_ONLY=1 limits a quick run to the secret rares (numbered above the
   // official count), which carry most of the value.
   const secret = set.cards.filter((c) => !/^\d+$/.test(c.localId) || Number(c.localId) > official);
@@ -85,9 +83,13 @@ async function scanSet(setId: string, all: boolean): Promise<Opportunity[]> {
   for (const raw of raws) {
     if (!raw) continue;
     const cm = await cardmarketFor(raw).catch(() => null);
-    if (!cm?.trend || cm.trend < MIN_TREND_EUR) continue;
+    if (!cm?.trend) continue;
     const s = toSummary(raw);
     const rush = cr.get(s.number);
+    // Worth listing when it is worth something on either side: a cheap Cardmarket card that
+    // Card Rush buys for more is exactly a Germany → Japan deal.
+    const jpValueEur = Math.max(rush?.priceJpy ?? 0, rush?.buyJpy ?? 0) * jpyToEur;
+    if (cm.trend < MIN_TREND_EUR && jpValueEur < MIN_TREND_EUR) continue;
     const exact = yyt.filter((r) => r.number === s.number);
     const shop = (exact.length ? exact : yyt.filter((r) => r.number.split('/')[0] === s.number.split('/')[0]))
       .sort((a, b) => (a.stock === 0 ? 1 : 0) - (b.stock === 0 ? 1 : 0) || a.priceJpy - b.priceJpy)[0];
@@ -103,6 +105,7 @@ async function scanSet(setId: string, all: boolean): Promise<Opportunity[]> {
       cmTrend: cm.trend,
       cmAvg30: cm.avg30,
       cmLow: cm.low,
+      cmId: cm.idProduct,
       yytJpy: shop?.priceJpy ?? null,
       yytStock: shop?.stock ?? null,
       yytUrl: shop?.url ?? null,
@@ -128,7 +131,7 @@ function writeHistory(items: Opportunity[]) {
     const hist: HistoryFile = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
     for (const r of rows) {
       const series = (hist[r.id] ?? []).filter(([d]) => d !== today && d >= cutoff);
-      series.push([today, r.cmTrend, r.cmAvg30, r.yytJpy, r.crJpy ?? null]);
+      series.push([today, r.cmTrend, r.cmAvg30, r.yytJpy, r.crJpy ?? null, r.crBuyJpy ?? null]);
       hist[r.id] = series;
     }
     writeFileSync(file, JSON.stringify(hist));
@@ -149,7 +152,7 @@ async function main() {
   const setMeta: OpportunityFile['sets'] = [];
   for (const setId of sets) {
     try {
-      const rows = await scanSet(setId, all);
+      const rows = await scanSet(setId, all, fx.jpyToEur);
       items.push(...rows);
       if (rows.length) setMeta.push({ id: setId, name: rows[0].setName });
     } catch (e) {
