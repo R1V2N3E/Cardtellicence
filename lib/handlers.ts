@@ -1,4 +1,5 @@
 // Web-standard request handlers shared by the Vercel functions (api/*.ts) and the Vite dev server.
+import { cardrushSet } from './cardrush.js';
 import { getFx } from './fx.js';
 import { findPriceCharting } from './pricecharting.js';
 import { buildReport } from './report.js';
@@ -193,6 +194,21 @@ export async function pricesHandler(req: Request) {
       return [id, cm && { trend: cm.trend, avg1: cm.avg1, avg7: cm.avg7, avg30: cm.avg30, low: cm.low, updated: cm.updated, source: 'cardmarket' }] as const;
     });
     return json({ prices: Object.fromEntries(entries), fetchedAt: new Date().toISOString() }, 600);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Card Rush prices of one set (?set=SV2a), or one card (&number=201/165). */
+export async function cardrushHandler(req: Request) {
+  const url = new URL(req.url);
+  const set = url.searchParams.get('set') ?? '';
+  const number = url.searchParams.get('number');
+  if (!/^[A-Za-z0-9.-]{1,20}$/.test(set)) return fail('invalid set id', 400);
+  try {
+    const prices = await cardrushSet(set);
+    if (number) return json({ price: prices.get(number) ?? null }, 900);
+    return json({ prices: Object.fromEntries(prices) }, 900);
   } catch (e) {
     return fail(e);
   }
