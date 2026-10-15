@@ -45,6 +45,7 @@ export function Thumb({
   size = 'low',
   eager = false,
   className = 'thumb',
+  timeout = 6000,
 }: {
   id: string;
   image: string | null;
@@ -53,6 +54,8 @@ export function Thumb({
   size?: 'low' | 'high';
   eager?: boolean;
   className?: string;
+  /** How long a source may take before the next one is tried. */
+  timeout?: number;
 }) {
   const sources = [...new Set([cardImg(image, size), fallback, `/api/img?id=${encodeURIComponent(id)}${size === 'high' ? '&size=high' : ''}`])].filter(Boolean) as string[];
   const key = sources.join('|');
@@ -63,7 +66,7 @@ export function Thumb({
   // A source that hasn't delivered after a few seconds is skipped (the last one is kept).
   useEffect(() => {
     if (cur.loaded || cur.i >= sources.length - 1) return;
-    const t = setTimeout(next, 6000);
+    const t = setTimeout(next, timeout);
     return () => clearTimeout(t);
   }, [key, cur.i, cur.loaded]);
 

@@ -42,6 +42,51 @@ const cmSearchUrl = (name: string) =>
 const productNumber = (id: number) =>
   cached(`snk:pn:${id}`, 7 * 24 * 3600_000, async () => (await getJson<{ productNumber?: string }>(`https://snkrdunk.com/v1/apparels/${id}`)).productNumber ?? null);
 
+/**
+ * SNKRDUNK boxes/packs of one set. Search by set name and by set code, then accept only products
+ * whose product number is exactly this set's ("pkmn-tcg-SV2a"). Names alone are not reliable
+ * (TCGdex has e.g. the wrong Japanese name for SV4a), and a wrong match would fake a margin.
+ */
+async function snkSealedCandidates(setId: string, setName: string): Promise<SnkrdunkHit[]> {
+  // SNKRDUNK spells prefixes differently ("TAG TEAM GX" → "タッグチームGX"), so also try the
+  // last word of the name alone.
+  const names = [...new Set([`「${setName}」`, coreName(setName)])];
+  const queries = [...names.flatMap((n) => [`${n} パック`, `${n} ボックス`]), `${setId} パック`, `${setId} ボックス`];
+  const seen = new Map<number, SnkrdunkHit>();
+  for (const q of queries) for (const h of await searchSnkrdunk(q).catch(() => [])) if (!h.label.includes('[')) seen.set(h.id, h);
+  return [...seen.values()].filter((h) => /パック|ボックス|BOX/i.test(h.label) && !/シュリンクなし|カートン|まとめ|セット|英語版|【海外/.test(h.label));
+}
+
+const coreName = (setName: string) => setName.split(/\s+/).pop() ?? setName;
+
+async function snkSealedFor(setId: string, setName: string): Promise<SnkrdunkHit[]> {
+  const verified: SnkrdunkHit[] = [];
+  for (const h of (await snkSealedCandidates(setId, setName)).slice(0, 12)) {
+    const pn = await productNumber(h.id).catch(() => null);
+    if (pn?.toLowerCase() === `pkmn-tcg-${setId}`.toLowerCase()) verified.push(h);
+  }
+  return verified;
+}
+
+const isPack = (h: SnkrdunkHit) => h.label.includes('パック') && !h.label.includes('ボックス');
+
+/** Photo of a set's booster pack (falls back to the box), verified like the sealed prices. */
+export function packImage(setId: string): Promise<string> {
+  // Misses throw so they aren't cached.
+  return cached(`pack-img:${setId}`, 7 * 24 * 3600_000, async () => {
+    const set = await getSet(setId);
+    let hits = (await snkSealedFor(setId, set.name)).filter((h) => h.image);
+    // Older products carry no set code ("pkmn-20"); for a picture, the set name in the label is
+    // enough (prices still require the exact product number).
+    const core = coreName(set.name);
+    if (!hits.length && core.length >= 4)
+      hits = (await snkSealedCandidates(setId, set.name)).filter((h) => h.image && h.label.includes(core));
+    const hit = hits.find(isPack) ?? hits.find((h) => h.label.includes('ボックス')) ?? hits[0];
+    if (!hit?.image) throw new Error('no pack image');
+    return hit.image;
+  });
+}
+
 /** Box and pack of one Japanese set, with Cardmarket and SNKRDUNK prices. */
 export async function sealedForSet(setId: string): Promise<SealedItem[]> {
   const [set, exp] = await Promise.all([getSet(setId), expansionOf(setId)]);
@@ -50,20 +95,9 @@ export async function sealedForSet(setId: string): Promise<SealedItem[]> {
   const box = products.find((p) => p.categoryName === 'Pokémon Display');
   const pack = products.find((p) => p.categoryName === 'Pokémon Booster');
 
-  // SNKRDUNK: search by set name and by set code, then accept only products whose product
-  // number is exactly this set's ("pkmn-tcg-SV2a"). Names alone are not reliable (TCGdex has
-  // e.g. the wrong Japanese name for SV4a), and a wrong match would fake a margin.
-  const queries = [`「${set.name}」 ボックス`, `${setId} ボックス`, `${setId} パック`];
-  const seen = new Map<number, SnkrdunkHit>();
-  for (const q of queries) for (const h of await searchSnkrdunk(q).catch(() => [])) if (!h.label.includes('[')) seen.set(h.id, h);
-  const verified: SnkrdunkHit[] = [];
-  for (const h of [...seen.values()].slice(0, 10)) {
-    if (/シュリンクなし|カートン|まとめ|セット|英語版|【海外/.test(h.label)) continue;
-    const pn = await productNumber(h.id).catch(() => null);
-    if (pn?.toLowerCase() === `pkmn-tcg-${setId}`.toLowerCase()) verified.push(h);
-  }
+  const verified = await snkSealedFor(setId, set.name);
   const snkBox = verified.find((h) => h.label.includes('ボックス'));
-  const snkPack = verified.find((h) => h.label.includes('パック') && !h.label.includes('ボックス'));
+  const snkPack = verified.find(isPack);
 
   const out: SealedItem[] = [];
   for (const [kind, cm, snk] of [

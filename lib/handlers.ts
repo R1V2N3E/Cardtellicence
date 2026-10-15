@@ -6,7 +6,7 @@ import { search } from './search.js';
 import { cached, getJson, mapLimit } from './http.js';
 import { identifyConfigured, matchReading, readCard } from './identify.js';
 import { searchMercari } from './mercari.js';
-import { getSnkrdunkSealedChart, sealedPrices } from './sealed.js';
+import { getSnkrdunkSealedChart, packImage, sealedPrices } from './sealed.js';
 import { externalSnkId, getExternalCard, isExternalId } from './external.js';
 import { cardmarketFor } from './prices.js';
 import { findSnkrdunk, getSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
@@ -95,9 +95,12 @@ const yyImg = (url: string, size: 'thumb' | 'high') => {
 /**
  * Best available picture for a card, as a redirect: TCGdex artwork, else the Yuyu-tei
  * scan stored by the daily scan, else SNKRDUNK's product photo. ?size=thumb|high
+ * With ?set=<SET> instead: the photo of that set's booster pack.
  */
 export async function imgHandler(req: Request) {
   const url = new URL(req.url);
+  const setId = url.searchParams.get('set');
+  if (setId != null) return packImgHandler(url, setId);
   const id = url.searchParams.get('id') ?? '';
   const size = url.searchParams.get('size') === 'high' ? 'high' : 'thumb';
   if (!CARD_ID.test(id)) return fail('invalid card id', 400);
@@ -128,6 +131,20 @@ export async function imgHandler(req: Request) {
     status: 302,
     headers: { location: target, 'cache-control': 'public, max-age=86400, s-maxage=604800' },
   });
+}
+
+const redirect = (target: string | null) =>
+  target
+    ? new Response(null, { status: 302, headers: { location: target, 'cache-control': 'public, max-age=86400, s-maxage=604800' } })
+    : new Response('no image', { status: 404, headers: { 'cache-control': 'public, s-maxage=3600' } });
+
+async function packImgHandler(url: URL, setId: string) {
+  if (!/^[A-Za-z0-9.-]{1,20}$/.test(setId)) return fail('invalid set id', 400);
+  // The daily scan already knows the packs of recent sets.
+  const scan = await cached('scan-file', 10 * 60_000, () => getJson<OpportunityFile>(`${url.origin}/data/opportunities.json`)).catch(() => null);
+  const sealed = scan?.sealed?.filter((s) => s.setId.toLowerCase() === setId.toLowerCase() && s.image) ?? [];
+  const known = sealed.find((s) => s.kind === 'pack') ?? sealed[0];
+  return redirect(known?.image ?? (await packImage(setId).catch(() => null)));
 }
 
 /** POST {image: dataURL} → what Claude read on the card + matching Japanese cards. */

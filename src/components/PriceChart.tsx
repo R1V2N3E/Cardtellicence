@@ -34,7 +34,7 @@ const alpha = (hex: string, a: number) => {
 
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-export function PriceChart({ series, height = 220 }: { series: Series[]; height?: number }) {
+export function PriceChart({ series, height = 220, intraday = false }: { series: Series[]; height?: number; intraday?: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const chart = useRef<Chart | null>(null);
 
@@ -77,7 +77,7 @@ export function PriceChart({ series, height = 220 }: { series: Series[]; height?
         animation: false,
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
         scales: {
-          x: { type: 'time', adapters: { date: { locale: de } }, time: { tooltipFormat: 'dd.MM.yyyy', displayFormats: { day: 'd. MMM', week: 'd. MMM', month: 'MMM yy' } }, grid: { display: false }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } },
+          x: { type: 'time', adapters: { date: { locale: de } }, time: { tooltipFormat: intraday ? 'dd.MM. HH:mm' : 'dd.MM.yyyy', displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'd. MMM', week: 'd. MMM', month: 'MMM yy' } }, grid: { display: false }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } },
           y: { grid: { color: grid }, border: { display: false }, ticks: { color: muted, callback: (v) => fmtEur(Number(v)), maxTicksLimit: 6 } },
         },
         plugins: {
@@ -87,7 +87,7 @@ export function PriceChart({ series, height = 220 }: { series: Series[]; height?
       },
     });
     return () => chart.current?.destroy();
-  }, [series]);
+  }, [series, intraday]);
 
   const empty = series.every((s) => !s.points.length);
   return (

@@ -27,7 +27,7 @@ export interface CmProduct {
 
 
 export function getPriceGuide(): Promise<{ createdAt: string; byId: Map<number, RawGuide> }> {
-  return cached('cm:guide', 6 * 3600_000, async () => {
+  return cached('cm:guide', 3600_000, async () => {
     const res = await request(PRICE_GUIDE, {}, 25000);
     const data = (await res.json()) as { createdAt: string; priceGuides: RawGuide[] };
     return { createdAt: data.createdAt, byId: new Map(data.priceGuides.map((g) => [g.idProduct, g])) };

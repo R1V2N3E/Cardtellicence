@@ -407,6 +407,9 @@ body:has(.sheet-backdrop, .viewer) .tabbar { display: none; }
 .deal-margin.neg { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--neg) 20%, transparent); }
 .sealed-row { width: 100%; text-align: left; color: inherit; font: inherit; }
 .sealed-thumb, .sealed-head img { object-fit: contain; background: #fff; padding: 4px; }
+.pack-thumb.img-wrap { background: transparent; }
+.deal .pack-thumb { box-shadow: none; }
+.pack-thumb img { object-fit: contain; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.35)); }
 .sealed-head { display: flex; gap: 12px; align-items: center; }
 .sealed-head img, .sealed-head .thumb { width: 96px; height: 96px; border-radius: 14px; flex: none; }
 .filter-note { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); margin: 4px 0 10px; }

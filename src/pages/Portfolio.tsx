@@ -5,7 +5,7 @@ import { AppBar } from '../components/AppBar';
 import { PortfolioChart } from '../components/PortfolioChart';
 import { CardLink, Chips, Thumb } from '../components/ui';
 import { ago, fmtEur, fmtJpy, fmtSigned, marginClass } from '../format';
-import { CONDITIONS, readPortfolioHistory, recordPortfolioValue, useCollection, type CollectionItem, type Condition } from '../state';
+import { CONDITIONS, readPortfolioHistory, readPortfolioTicks, recordPortfolioTick, recordPortfolioValue, useCollection, type CollectionItem, type Condition } from '../state';
 import { Watchlist } from './Watchlist';
 import { usePullToRefresh, useSwipeTabs } from '../gestures';
 
@@ -99,9 +99,12 @@ export function Portfolio() {
   // Keep one value per day once all cards are priced, for the change figure and chart.
   const complete = items.length > 0 && totals.priced === items.length;
   useEffect(() => {
-    if (complete) recordPortfolioValue(totals.value);
-  }, [complete, totals.value]);
+    if (!complete) return;
+    recordPortfolioValue(totals.value);
+    recordPortfolioTick(totals.value);
+  }, [complete, totals.value, fetchedAt]);
   const history = useMemo(() => readPortfolioHistory(), [complete, totals.value]);
+  const ticks = useMemo(() => readPortfolioTicks(), [complete, totals.value, fetchedAt]);
   const change = useMemo(() => {
     if (history.length < 2) {
       // No recorded week yet: compare with Cardmarket's 7-day averages.
@@ -236,7 +239,7 @@ export function Portfolio() {
             </div>
           </div>
 
-          <PortfolioChart items={items} prices={prices} factor={valueFactor} snapshots={history} />
+          <PortfolioChart items={items} prices={prices} factor={valueFactor} snapshots={history} ticks={ticks} />
 
           {!items.length && (
             <div className="empty-state">
@@ -324,7 +327,7 @@ export function Portfolio() {
               {sets.map((s) => (
                 <li key={s.setId}>
                   <button className="deal set-row" onClick={() => (setQ(s.setId), setTab('cards'))}>
-                    <Thumb id={s.cardId} image={s.image} alt={s.setName} />
+                    <Thumb id={s.cardId} image={null} fallback={`/api/img?set=${encodeURIComponent(s.setId)}`} alt={s.setName} className="thumb pack-thumb" timeout={25000} />
                     <div className="deal-main">
                       <div className="deal-name">{s.setName || s.setId}</div>
                       <div className="deal-meta">

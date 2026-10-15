@@ -143,6 +143,21 @@ export function recordPortfolioValue(value: number) {
 }
 export const readPortfolioHistory = () => readList<[string, number]>('ct-portfolio-history');
 
+/**
+ * Intraday values for the 1-day chart: [epoch ms, EUR]. A point is kept whenever the value
+ * changes, and at most every 10 minutes while it doesn't; 30 days are kept.
+ */
+export function recordPortfolioTick(value: number) {
+  const now = Date.now();
+  const v = Math.round(value * 100) / 100;
+  const ticks = readList<[number, number]>('ct-portfolio-ticks').filter(([t]) => t > now - 30 * 86400_000);
+  const last = ticks[ticks.length - 1];
+  if (last && last[1] === v && now - last[0] < 10 * 60_000) return;
+  ticks.push([now, v]);
+  write('ct-portfolio-ticks', ticks);
+}
+export const readPortfolioTicks = () => readList<[number, number]>('ct-portfolio-ticks');
+
 export function readAccessCode(): string {
   try {
     return localStorage.getItem('ct-access-code') ?? '';
