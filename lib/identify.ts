@@ -89,15 +89,28 @@ function anthropic(): Anthropic {
 
 type ImageMedia = 'image/jpeg' | 'image/png' | 'image/webp';
 
-async function structured<T>(content: Anthropic.Beta.BetaContentBlockParam[], schema: object): Promise<T> {
-  const response = await anthropic().beta.messages.create({
+type Effort = 'low' | 'medium';
+
+/**
+ * One structured call. Speed matters here (someone is holding a card up to the camera), so it
+ * runs in fast mode (same model, faster output); when fast mode is rate-limited or unavailable
+ * it is repeated at standard speed.
+ */
+async function structured<T>(content: Anthropic.Beta.BetaContentBlockParam[], schema: object, effort: Effort): Promise<T> {
+  const params = {
     model: 'claude-opus-5-5',
     max_tokens: 4000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: schema as Record<string, unknown> } },
-    messages: [{ role: 'user', content }],
-  });
+    fallbacks: 'default' as const,
+    output_config: { effort, format: { type: 'json_schema' as const, schema: schema as Record<string, unknown> } },
+    messages: [{ role: 'user' as const, content }],
+  };
+  const response = await anthropic()
+    .beta.messages.create({ ...params, speed: 'fast', betas: ['server-side-fallback-2026-07-01', 'fast-mode-2026-02-01'] })
+    .catch((e) => {
+      if (e instanceof Anthropic.RateLimitError || e instanceof Anthropic.BadRequestError || e instanceof Anthropic.PermissionDeniedError)
+        return anthropic().beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'] });
+      throw e;
+    });
   if (response.stop_reason === 'refusal') throw new Error('Die Erkennung wurde für dieses Bild abgelehnt');
   const text = response.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')?.text;
   if (!text) throw new Error('Keine Antwort der Erkennung');
@@ -111,6 +124,8 @@ export function readCard(imageBase64: string, mediaType: ImageMedia): Promise<Ca
       { type: 'text', text: READ_PROMPT },
     ],
     READ_SCHEMA,
+    // Transcribing printed text needs little deliberation; low effort is much faster.
+    'low',
   );
 }
 
@@ -128,7 +143,8 @@ interface Candidate {
 
 const fromRaw = (raw: RawCard): Candidate => {
   const summary = toSummary(raw);
-  return { summary, hp: raw.hp ?? null, illustrator: raw.illustrator ?? null, image: raw.image ? `${raw.image}/high.webp` : null };
+  // The low-resolution artwork is plenty to compare illustrations and keeps the check fast.
+  return { summary, hp: raw.hp ?? null, illustrator: raw.illustrator ?? null, image: raw.image ? `${raw.image}/low.webp` : null };
 };
 
 function parseNumber(n: string | null) {
@@ -140,40 +156,42 @@ async function collectCandidates(r: CardReading): Promise<Candidate[]> {
   const num = parseNumber(r.number);
   const out = new Map<string, Candidate>();
   const addRaw = (raw: RawCard | null) => raw && !out.has(raw.id) && out.set(raw.id, fromRaw(raw));
+  const nameMatches = () => !!r.name && [...out.values()].some((c) => normName(c.summary.nameJa) === normName(r.name!));
 
   const setId = r.set_code ? await resolveSetId(r.set_code.normalize('NFKC')) : null;
 
-  // 1. Exact set + number.
-  if (setId && num) {
-    for (const localId of [String(num.n).padStart(3, '0'), String(num.n)]) {
-      const raw = await getRawCard(`${setId}-${localId}`).catch(() => null);
-      if (raw) {
-        addRaw(raw);
-        break;
+  await Promise.all([
+    // 1. Exact set + number.
+    (async () => {
+      if (!setId || !num) return;
+      const ids = [String(num.n).padStart(3, '0'), String(num.n)].map((l) => `${setId}-${l}`);
+      const raws = await Promise.all(ids.map((id) => getRawCard(id).catch(() => null)));
+      addRaw(raws.find(Boolean) ?? null);
+    })(),
+    // 2. Same number in every set with that printed total.
+    (async () => {
+      if (!num?.total) return;
+      const sets = (await listSets()).filter((s) => printedTotal(s.id, s.cardCount.official) === num.total).map((s) => s.id);
+      const cards = await cardsByNumber(sets, String(num.n));
+      await mapLimit(cards, 8, async (c) => addRaw(await getRawCard(c.id).catch(() => null)));
+    })(),
+    // 4. Products TCGdex doesn't list (decks, build sets): SNKRDUNK knows them by set code + number.
+    (async () => {
+      if (!r.set_code || !num || setId) return;
+      const printed = num.raw.includes('/') ? num.raw : String(num.n).padStart(3, '0');
+      const hit = await findSnkrdunk(r.set_code, printed).catch(() => null);
+      const hits = hit ? [hit] : r.name ? await searchSnkrdunk(`${r.name} ${printed}`).catch(() => []) : [];
+      for (const h of hits.slice(0, 4)) {
+        const s = externalSummary(h);
+        if (s && !out.has(s.id)) out.set(s.id, { summary: s, hp: null, illustrator: null, image: h.image });
       }
-    }
-  }
-  // 2. Same number in every set with that printed total.
-  if (num?.total) {
-    const sets = (await listSets()).filter((s) => printedTotal(s.id, s.cardCount.official) === num.total).map((s) => s.id);
-    const cards = await cardsByNumber(sets, String(num.n));
-    await mapLimit(cards, 6, async (c) => addRaw(await getRawCard(c.id).catch(() => null)));
-  }
-  // 3. Every printing with this name.
-  if (r.name) {
+    })(),
+  ]);
+  // 3. Every printing with this name — only needed when set and number found nothing with that name.
+  if (r.name && !nameMatches()) {
     const briefs = await searchCards({ name: `eq:${r.name.normalize('NFKC').replace(/\s/g, '')}` }, 60).catch(() => []);
     const loose = briefs.length ? [] : await searchCards({ name: r.name }, 40).catch(() => []);
-    await mapLimit([...briefs, ...loose].slice(0, 60), 8, async (b) => addRaw(await getRawCard(b.id).catch(() => null)));
-  }
-  // 4. Products TCGdex doesn't list (decks, build sets): SNKRDUNK knows them by set code + number.
-  if (r.set_code && num && !setId) {
-    const printed = num.raw.includes('/') ? num.raw : String(num.n).padStart(3, '0');
-    const hit = await findSnkrdunk(r.set_code, printed).catch(() => null);
-    const hits = hit ? [hit] : r.name ? await searchSnkrdunk(`${r.name} ${printed}`).catch(() => []) : [];
-    for (const h of hits.slice(0, 4)) {
-      const s = externalSummary(h);
-      if (s && !out.has(s.id)) out.set(s.id, { summary: s, hp: null, illustrator: null, image: h.image });
-    }
+    await mapLimit([...briefs, ...loose].slice(0, 60), 10, async (b) => addRaw(await getRawCard(b.id).catch(() => null)));
   }
   return [...out.values()];
 }
@@ -228,16 +246,32 @@ async function visualCheck(photo: { data: string; media: ImageMedia }, cands: Sc
       { type: 'text', text: VERIFY_PROMPT(usable.length) },
     ],
     VERIFY_SCHEMA,
+    'medium',
   );
   const picked = verdict.match != null ? usable[verdict.match - 1]?.c ?? null : null;
   return { picked, confidence: verdict.confidence, compared: usable.map((u) => u.c) };
 }
 
-export async function matchReading(r: CardReading, photo?: { data: string; media: ImageMedia }): Promise<IdentifyResult> {
+/** Progress of a recognition, streamed to the app while it waits. */
+export type IdentifyProgress =
+  | { stage: 'reading' }
+  | { stage: 'read'; reading: CardReading }
+  | { stage: 'searching' }
+  | { stage: 'candidates'; candidates: { name: string; number: string; setId: string; image: string | null }[] }
+  | { stage: 'verifying' }
+  | { stage: 'done'; result: IdentifyResult }
+  | { stage: 'error'; error: string };
+
+export async function matchReading(
+  r: CardReading,
+  photo?: { data: string; media: ImageMedia },
+  progress: (e: IdentifyProgress) => void = () => {},
+): Promise<IdentifyResult> {
   const empty = (note: string): IdentifyResult => ({ reading: r, matches: [], confidence: 'low', note, checks: null, matchedBy: 'none' });
   if (!r.is_pokemon_card) return empty('Auf dem Foto wurde keine Pokémon-Karte erkannt.');
   if (!r.name && !r.number) return empty('Name und Nummer waren nicht lesbar. Bitte näher und ohne Spiegelung fotografieren.');
 
+  progress({ stage: 'searching' });
   const scored = (await collectCandidates(r)).map((c) => score(r, c));
   // The name is the most robust fact on the card: never offer a card with a different name.
   const pool = r.name ? scored.filter((c) => c.checks.name) : scored.filter((c) => c.checks.number && (c.checks.set || c.checks.total));
@@ -258,12 +292,20 @@ export async function matchReading(r: CardReading, photo?: { data: string; media
   let visual: boolean | null = null;
   let note: string | null = null;
 
-  // Reference images for cards TCGdex has no artwork for: SNKRDUNK's product photo.
-  await mapLimit(pool.slice(0, 4), 4, async (c) => {
-    if (!c.image) c.image = (await findSnkrdunk(c.summary.setId, c.summary.number).catch(() => null))?.image ?? null;
+  progress({
+    stage: 'candidates',
+    candidates: pool.slice(0, 6).map((c) => ({ name: c.summary.nameEn ?? c.summary.nameJa, number: c.summary.number, setId: c.summary.setId, image: c.image })),
   });
 
-  if (photo) {
+  // When name, number and set/total all agree with exactly one card, the printed facts already
+  // identify it; the image comparison is only needed when something is open.
+  const settled = confidence === 'high' && pool.filter((c) => c.checks.number && (c.checks.set || c.checks.total)).length === 1;
+  if (photo && !settled) {
+    progress({ stage: 'verifying' });
+    // Reference images for cards TCGdex has no artwork for: SNKRDUNK's product photo.
+    await mapLimit(pool.slice(0, 4), 4, async (c) => {
+      if (!c.image) c.image = (await findSnkrdunk(c.summary.setId, c.summary.number).catch(() => null))?.image ?? null;
+    });
     const v = await visualCheck(photo, pool.slice(0, 4)).catch(() => null);
     if (v) {
       if (v.picked) {

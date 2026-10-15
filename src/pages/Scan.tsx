@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { IdentifyResult } from '../../lib/identify';
+import type { IdentifyProgress, IdentifyResult } from '../../lib/identify';
+import { ScanAnimation } from '../components/ScanAnimation';
 import type { CardSummary } from '../../lib/types';
 import { api, ApiError, type LivePrice } from '../api';
 import { AddSheet } from '../components/AddSheet';
@@ -9,23 +10,23 @@ import { Spinner, Thumb } from '../components/ui';
 import { fmtEur } from '../format';
 
 const CARD_RATIO = 88 / 63; // height / width of a trading card
-const MAX_EDGE = 1600; // small print (set code, number) needs resolution
+const MAX_EDGE = 1280; // enough for the small print (set code, number) once cropped to the card; smaller uploads faster
 
 type Phase =
   | { kind: 'camera' }
-  | { kind: 'working'; photo: string }
+  | { kind: 'working'; photo: string; events: IdentifyProgress[]; finished: boolean }
   | { kind: 'result'; photo: string; result: IdentifyResult }
   | { kind: 'manual'; photo: string | null; reason: string }
   | { kind: 'error'; photo: string | null; message: string };
 
 /** Downscale a drawable to at most MAX_EDGE px and return a JPEG data URL. */
-function toJpeg(src: CanvasImageSource, sx: number, sy: number, sw: number, sh: number): string {
-  const scale = Math.min(1, MAX_EDGE / Math.max(sw, sh));
+function toJpeg(src: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, maxEdge = MAX_EDGE): string {
+  const scale = Math.min(1, maxEdge / Math.max(sw, sh));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(sw * scale);
   canvas.height = Math.round(sh * scale);
   canvas.getContext('2d')!.drawImage(src, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.86);
+  return canvas.toDataURL('image/jpeg', 0.85);
 }
 
 export function Scan() {
@@ -102,9 +103,12 @@ export function Scan() {
   };
 
   const identify = async (photo: string) => {
-    setPhase({ kind: 'working', photo });
+    setPhase({ kind: 'working', photo, events: [], finished: false });
     try {
-      const result = await api.identify(photo);
+      const result = await api.identify(photo, (e) => setPhase((p) => (p.kind === 'working' ? { ...p, events: [...p.events, e] } : p)));
+      // A short lock-on moment before the result, so the finish is visible.
+      setPhase((p) => (p.kind === 'working' ? { ...p, finished: true } : p));
+      await new Promise((r) => setTimeout(r, 750));
       if (!result.matches.length) {
         const read = [result.reading.set_code, result.reading.number, result.reading.name].filter(Boolean).join(' · ');
         return setPhase({ kind: 'manual', photo, reason: `${read ? `Gelesen: ${read}. ` : ''}${result.note ?? 'Keine passende Karte gefunden.'}` });
@@ -142,7 +146,8 @@ export function Scan() {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      identify(toJpeg(img, 0, 0, img.naturalWidth, img.naturalHeight));
+      // Library and system-camera photos are not cropped to the card: keep more pixels.
+      identify(toJpeg(img, 0, 0, img.naturalWidth, img.naturalHeight, 1800));
       URL.revokeObjectURL(url);
     };
     img.src = url;
@@ -199,14 +204,7 @@ export function Scan() {
         <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (fromLibrary(e.target.files?.[0]), (e.target.value = ''))} />
       </div>
 
-      {phase.kind === 'working' && (
-        <div className="sheet-backdrop">
-          <div className="sheet center">
-            <img className="scan-photo" src={phase.photo} alt="Foto" />
-            <Spinner label="Karte wird erkannt…" />
-          </div>
-        </div>
-      )}
+      {phase.kind === 'working' && <ScanAnimation photo={phase.photo} events={phase.events} finished={phase.finished} />}
       {phase.kind === 'result' && (
         <ResultSheet
           photo={phase.photo}

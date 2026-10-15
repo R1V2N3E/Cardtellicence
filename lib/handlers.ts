@@ -6,7 +6,7 @@ import { findPriceCharting } from './pricecharting.js';
 import { buildReport } from './report.js';
 import { search } from './search.js';
 import { cached, dropCached, getJson, mapLimit } from './http.js';
-import { identifyConfigured, matchReading, readCard } from './identify.js';
+import { identifyConfigured, matchReading, readCard, type IdentifyProgress } from './identify.js';
 import { searchMercari } from './mercari.js';
 import { getSnkrdunkSealedChart, packImage, sealedPrices } from './sealed.js';
 import { externalSnkId, getExternalCard, isExternalId } from './external.js';
@@ -160,8 +160,29 @@ export async function identifyHandler(req: Request) {
     const m = body.image?.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
     if (!m) return fail('image must be a base64 data URL', 400);
     if (m[2].length > 6_000_000) return fail('image too large', 413);
-    const reading = await readCard(m[2], m[1] as 'image/jpeg');
-    return json(await matchReading(reading, { data: m[2], media: m[1] as 'image/jpeg' }), 0);
+    const photo = { data: m[2], media: m[1] as 'image/jpeg' };
+    // ?stream=1: one JSON line per step (reading → read → searching → candidates → verifying →
+    // done), so the app can show what was read while the rest is still running.
+    if (new URL(req.url).searchParams.get('stream') === '1') {
+      const enc = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const send = (e: IdentifyProgress) => controller.enqueue(enc.encode(JSON.stringify(e) + '\n'));
+          try {
+            send({ stage: 'reading' });
+            const reading = await readCard(photo.data, photo.media);
+            send({ stage: 'read', reading });
+            send({ stage: 'done', result: await matchReading(reading, photo, send) });
+          } catch (e) {
+            send({ stage: 'error', error: e instanceof Error ? e.message : String(e) });
+          }
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
+    }
+    const reading = await readCard(photo.data, photo.media);
+    return json(await matchReading(reading, photo), 0);
   } catch (e) {
     return fail(e);
   }

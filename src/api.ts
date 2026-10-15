@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { IdentifyResult } from '../lib/identify';
+import type { IdentifyProgress, IdentifyResult } from '../lib/identify';
 import type { CardReport, CardSummary, ChartPoint, FxRates, HistoryFile, Opportunity, OpportunityFile, SealedItem } from '../lib/types';
 import { readAccessCode } from './state';
 
@@ -57,15 +57,35 @@ export const api = {
     ),
   live: (sets: string[], fresh: boolean) =>
     getJson<LivePatch>(`/api/live?sets=${sets.map(encodeURIComponent).join(',')}${fresh ? '&fresh=1' : ''}`, fresh ? { cache: 'no-store' } : undefined),
-  identify: async (image: string): Promise<IdentifyResult> => {
-    const res = await fetch('/api/identify', {
+  /** Recognise a card; onProgress receives each step as the server finishes it. */
+  identify: async (image: string, onProgress?: (e: IdentifyProgress) => void): Promise<IdentifyResult> => {
+    const res = await fetch('/api/identify?stream=1', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-access-code': readAccessCode() },
       body: JSON.stringify({ image }),
     });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new ApiError(body.error ?? `http_${res.status}`, body.error ?? `HTTP ${res.status}`);
-    return body;
+    if (!res.ok || !res.body) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(body.error ?? `http_${res.status}`, body.error ?? `HTTP ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      buf += dec.decode(value ?? new Uint8Array(), { stream: !done });
+      let nl: number;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const e = JSON.parse(line) as IdentifyProgress;
+        if (e.stage === 'done') return e.result;
+        if (e.stage === 'error') throw new ApiError('failed', e.error);
+        onProgress?.(e);
+      }
+      if (done) throw new ApiError('failed', 'Verbindung abgebrochen – bitte erneut versuchen.');
+    }
   },
   history: (setId: string) => getJson<HistoryFile>(`/data/history/${encodeURIComponent(setId)}.json`).catch(() => ({}) as HistoryFile),
 };
