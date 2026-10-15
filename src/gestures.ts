@@ -54,9 +54,26 @@ export function usePullToRefresh(onRefresh: () => void, enabled = true) {
   return { pull, ready: pull >= PULL_TRIGGER, trigger: PULL_TRIGGER };
 }
 
+/** Everything below the page's segmented tabs: what slides along with the finger. */
+function swipeLayer(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  let el = document.querySelector('.seg-tabs')?.nextElementSibling as HTMLElement | null;
+  while (el) {
+    out.push(el);
+    el = el.nextElementSibling as HTMLElement | null;
+  }
+  return out;
+}
+
+const IGNORE = '.row-scroll, .gallery, .match-alts, .chart, canvas, input, select, textarea, .sheet, .viewer, .sheet-backdrop';
+
 /**
- * Horizontal swipe switches to the previous/next tab. Swipes that start on something that
- * scrolls sideways itself (chip rows, galleries, charts, inputs) are ignored.
+ * Horizontal swipe switches to the previous/next tab, like a native pager:
+ * - the direction is decided after the first few pixels, so a curved thumb swipe still counts,
+ * - while swiping sideways the page doesn't scroll and the content follows the finger,
+ * - releasing past 60 px (or a quick flick) switches the tab; otherwise it springs back.
+ * Swipes that start on something that scrolls sideways itself (chip rows, galleries, charts,
+ * inputs) are left alone.
  */
 export function useSwipeTabs<T extends string>(tabs: T[], current: T, setTab: (t: T) => void, enabled = true) {
   const state = useRef({ tabs, current, setTab });
@@ -65,29 +82,79 @@ export function useSwipeTabs<T extends string>(tabs: T[], current: T, setTab: (t
   useEffect(() => {
     if (!enabled) return;
     let start: { x: number; y: number; t: number } | null = null;
+    let axis: 'x' | 'y' | null = null;
+    let dx = 0;
+    let layer: HTMLElement[] = [];
+
+    const move = (x: number, animate: boolean) => {
+      for (const el of layer) {
+        el.style.transition = animate ? 'transform .22s cubic-bezier(.2,.9,.25,1), opacity .22s ease' : 'none';
+        el.style.transform = x ? `translateX(${x}px)` : '';
+        el.style.opacity = x ? String(Math.max(0.4, 1 - Math.abs(x) / 400)) : '';
+      }
+    };
+
     const onStart = (e: TouchEvent) => {
-      const el = e.target as Element;
-      if (el.closest('.row-scroll, .gallery, .match-alts, .chart, canvas, input, select, textarea, .sheet, .viewer')) return;
+      start = null;
+      axis = null;
+      dx = 0;
+      if (e.touches.length !== 1 || (e.target as Element).closest(IGNORE)) return;
       start = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
     };
-    const onEnd = (e: TouchEvent) => {
+
+    const onMove = (e: TouchEvent) => {
       if (!start) return;
-      const t = e.changedTouches[0];
-      const dx = t.clientX - start.x;
-      const dy = t.clientY - start.y;
-      const quick = Date.now() - start.t < 600;
+      const ddx = e.touches[0].clientX - start.x;
+      const ddy = e.touches[0].clientY - start.y;
+      if (!axis) {
+        if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
+        axis = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y';
+        if (axis === 'x') layer = swipeLayer();
+      }
+      if (axis !== 'x') return;
+      e.preventDefault(); // keep the page from scrolling while paging sideways
+      dx = ddx;
+      const { tabs: list, current: cur } = state.current;
+      const i = list.indexOf(cur);
+      const atEdge = (dx > 0 && i === 0) || (dx < 0 && i === list.length - 1);
+      move(atEdge ? dx * 0.2 : dx * 0.6, false);
+    };
+
+    const onEnd = () => {
+      if (!start || axis !== 'x') {
+        start = null;
+        return;
+      }
+      const fast = Date.now() - start.t < 300 && Math.abs(dx) > 30;
       start = null;
-      if (!quick || Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
       const { tabs: list, current: cur, setTab: set } = state.current;
       const i = list.indexOf(cur);
-      const next = dx < 0 ? list[i + 1] : list[i - 1];
-      if (next) set(next);
+      const next = Math.abs(dx) > 60 || fast ? (dx < 0 ? list[i + 1] : list[i - 1]) : undefined;
+      if (!next) return move(0, true);
+      // Slide the new tab in from the side the finger came from.
+      set(next);
+      const from = dx < 0 ? 60 : -60;
+      requestAnimationFrame(() => {
+        layer = swipeLayer();
+        move(from, false);
+        requestAnimationFrame(() => move(0, true));
+      });
     };
+
     window.addEventListener('touchstart', onStart, { passive: true });
+    window.addEventListener('touchmove', onMove, { passive: false });
     window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
     return () => {
       window.removeEventListener('touchstart', onStart);
+      window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('touchcancel', onEnd);
+      for (const el of swipeLayer()) {
+        el.style.transform = '';
+        el.style.opacity = '';
+        el.style.transition = '';
+      }
     };
   }, [enabled]);
 }
