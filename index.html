@@ -15,6 +15,11 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Open connections to the image hosts early so card pictures appear faster. -->
+    <link rel="preconnect" href="https://assets.tcgdex.net" />
+    <link rel="preconnect" href="https://card.yuyu-tei.jp" />
+    <link rel="preconnect" href="https://cdn.snkrdunk.com" />
+    <link rel="dns-prefetch" href="https://static.mercdn.net" />
   </head>
   <body>
     <div id="root"></div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
+import { useCardReport, type CardPreview } from '../cardCache';
 import type { CardReport, ChartPoint, HistoryFile } from '../../lib/types';
 import { api, useAsync } from '../api';
 import { PriceChart, type Series } from '../components/PriceChart';
@@ -15,7 +16,8 @@ const RANGE_DAYS: Record<Range, number> = { oneWeek: 7, oneMonth: 31, threeMonth
 
 export function CardPage() {
   const id = decodeURIComponent(useParams().id ?? '');
-  const { data: r, error, loading } = useAsync(() => api.card(id), [id]);
+  const preview = (useLocation().state as { preview?: CardPreview } | null)?.preview ?? null;
+  const { report: r, error } = useCardReport(id, preview);
   const [settings] = useSettings();
   const watch = useWatchlist();
   const [buySource, setBuySource] = useState<BuySource>(settings.buySource);
@@ -43,12 +45,12 @@ export function CardPage() {
       });
   }, [r, margin]);
 
-  if (loading && !r) return (<><Header title="Karte" back /><Spinner label="Prüfe Cardmarket, Yuyu-tei, SNKRDUNK, Mercari…" /></>);
-  if (error || !r) return (<><Header title="Karte" back /><ErrorBox message={error ?? 'Nicht gefunden'} /></>);
+  if (!r && error) return (<><Header title="Karte" back /><ErrorBox message={error} /></>);
+  if (!r) return <CardSkeleton />;
 
   const { card, fx } = r;
   const images = [
-    cardImg(card.image, 'high') ?? `/api/img?id=${encodeURIComponent(card.id)}&size=high`,
+    cardImg(card.image, 'high') ?? card.externalImage ?? `/api/img?id=${encodeURIComponent(card.id)}&size=high`,
     r.snkrdunk.ok ? r.snkrdunk.image : null,
     r.yuyutei.ok ? r.yuyutei.image : null,
     ...(r.mercari.ok ? r.mercari.items.slice(0, 6).map((i) => i.thumb) : []),
@@ -85,6 +87,7 @@ export function CardPage() {
       />
 
       <section className="hero">
+        {shown[0] && <div className="hero-bg" style={{ backgroundImage: `url("${shown[0]}")` }} aria-hidden="true" />}
         <div className="gallery">
           {shown.map((src, i) => (
             <img
@@ -93,6 +96,8 @@ export function CardPage() {
               alt={`${card.nameJa} photo ${i + 1}`}
               onClick={() => setViewer(i)}
               loading={i ? 'lazy' : 'eager'}
+              fetchPriority={i ? 'auto' : 'high'}
+              onLoad={(e) => e.currentTarget.classList.add('loaded')}
               onError={() => setBroken((b) => new Set(b).add(src))}
             />
           ))}
@@ -114,8 +119,17 @@ export function CardPage() {
         <div className="margin-flow">
           <div>
             <small>Kauf in Japan</small>
-            <strong>{fmtJpy(margin?.buy?.jpy)}</strong>
-            <span className="muted">≈ {fmtEur(margin?.buyEur)} · {margin?.buy?.label ?? 'kein Angebot'}</span>
+            {r.partial && !margin?.buy ? (
+              <>
+                <span className="sk sk-value" style={{ height: 26, margin: '4px 0' }} />
+                <span className="muted">lädt…</span>
+              </>
+            ) : (
+              <>
+                <strong>{fmtJpy(margin?.buy?.jpy)}</strong>
+                <span className="muted">≈ {fmtEur(margin?.buyEur)} · {margin?.buy?.label ?? 'kein Angebot'}</span>
+              </>
+            )}
           </div>
           <div className="arrow">→</div>
           <div>
@@ -135,7 +149,8 @@ export function CardPage() {
         <div className="row-scroll">
           <Chips<SellRef> value={sellRef} onChange={setSellRef} options={(Object.keys(SELL_LABEL) as SellRef[]).map((k) => [k, SELL_LABEL[k]])} />
         </div>
-        <p className="hint">Kurs: 1 € = {fmtJpy(1 / fx.jpyToEur)} (EZB {fx.date}). Gebühren, Versand und Einfuhr-USt. nicht enthalten.</p>
+        {fx.jpyToEur > 0 && <p className="hint">Kurs: 1 € = {fmtJpy(1 / fx.jpyToEur)} (EZB {fx.date}). Gebühren, Versand und Einfuhr-USt. nicht enthalten.</p>}
+        {r.partial && <p className="hint loading-line">Japan-Preise werden geladen…</p>}
       </section>
 
       <PriceTables r={r} />
@@ -143,6 +158,7 @@ export function CardPage() {
       <RecentSales r={r} />
       <Graded r={r} />
 
+      {Object.keys(r.links).length > 0 && (
       <section className="panel">
         <h2>Öffnen bei</h2>
         <div className="links">
@@ -154,6 +170,7 @@ export function CardPage() {
         </div>
         <p className="hint">Preise abgerufen {ago(r.fetchedAt)}. Cardmarket = offizieller Tages-Preisguide der japanischen Ausgabe.</p>
       </section>
+      )}
 
       {adding && <AddSheet card={card} priceEur={r.cardmarket.ok ? r.cardmarket.trend : null} onClose={() => setAdding(false)} />}
 
@@ -190,8 +207,41 @@ function Row({ label, value, sub, href }: { label: string; value: string; sub?: 
   );
 }
 
-function Unavailable({ label, res }: { label: string; res: { ok: false; error: string; url?: string } }) {
+function Unavailable({ label, res }: { label: string; res: { ok: false; error: string; url?: string; pending?: boolean } }) {
+  if (res.pending) return <SkeletonRow label={label} />;
   return <Row label={label} value="–" sub={res.error} href={res.url} />;
+}
+
+function SkeletonRow({ label }: { label: string }) {
+  return (
+    <div className="row">
+      <span className="row-label">{label}</span>
+      <span className="sk sk-value" />
+    </div>
+  );
+}
+
+/** Shown only when nothing at all is known yet (e.g. a card opened from a shared link). */
+function CardSkeleton() {
+  return (
+    <>
+      <Header title="Karte" back />
+      <section className="hero">
+        <div className="gallery">
+          <div className="sk sk-card" />
+        </div>
+        <div className="sk sk-line" style={{ width: '60%' }} />
+        <div className="sk sk-line" style={{ width: '40%' }} />
+      </section>
+      {[0, 1, 2].map((i) => (
+        <section key={i} className="panel">
+          <div className="sk sk-line" style={{ width: '45%' }} />
+          <div className="sk sk-line" />
+          <div className="sk sk-line" />
+        </section>
+      ))}
+    </>
+  );
 }
 
 function PriceTables({ r }: { r: CardReport }) {
@@ -284,9 +334,21 @@ function Charts({ r }: { r: CardReport }) {
         <Chips value={mode} onChange={setMode} options={[['raw', 'Roh'], ['psa10', 'PSA 10']]} />
         <Chips<Range> value={range} onChange={setRange} options={[['oneWeek', '1W'], ['oneMonth', '1M'], ['threeMonths', '3M'], ['all', 'All']]} />
       </div>
-      {snk.loading && !snk.data ? <Spinner /> : <PriceChart series={series} />}
+      {(snk.loading && !snk.data) || (!r.snkrdunk.ok && r.snkrdunk.pending) ? <div className="sk sk-chart" /> : <PriceChart series={series} />}
       <p className="hint">Alle Werte in EUR zum heutigen EZB-Kurs. Der Verlauf für Cardmarket und Yuyu-tei wächst mit dem täglichen Scan.</p>
     </section>
+  );
+}
+
+function SkeletonList() {
+  return (
+    <>
+      {[0, 1, 2, 3].map((i) => (
+        <li key={i}>
+          <span className="sk sk-line" style={{ width: '100%', gridColumn: '1 / -1' }} />
+        </li>
+      ))}
+    </>
   );
 }
 
@@ -308,7 +370,7 @@ function RecentSales({ r }: { r: CardReport }) {
               <span className="muted">{fmtEur(t.priceJpy * r.fx.jpyToEur)}</span>
             </li>
           ))}
-          {!trades.length && <li className="muted">Keine aktuellen Verkäufe{!r.snkrdunk.ok ? ` (${r.snkrdunk.error})` : ''}.</li>}
+          {!r.snkrdunk.ok && r.snkrdunk.pending ? <SkeletonList /> : !trades.length && <li className="muted">Keine aktuellen Verkäufe{!r.snkrdunk.ok ? ` (${r.snkrdunk.error})` : ''}.</li>}
         </ul>
       )}
       {tab === 'mercari' && (
@@ -323,7 +385,7 @@ function RecentSales({ r }: { r: CardReport }) {
               </a>
             </li>
           ))}
-          {!mercari.length && <li className="muted">Keine passenden Angebote{!r.mercari.ok ? ` (${r.mercari.error})` : ''}.</li>}
+          {!r.mercari.ok && r.mercari.pending ? <SkeletonList /> : !mercari.length && <li className="muted">Keine passenden Angebote{!r.mercari.ok ? ` (${r.mercari.error})` : ''}.</li>}
         </ul>
       )}
     </section>

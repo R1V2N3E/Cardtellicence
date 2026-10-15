@@ -19,7 +19,7 @@ export interface CardDetail extends CardSummary {
   dexId: number[];
 }
 
-export type SourceResult<T> = ({ ok: true } & T) | { ok: false; error: string; url?: string };
+export type SourceResult<T> = ({ ok: true } & T) | { ok: false; error: string; url?: string; pending?: boolean };
 
 export interface CardmarketPrices {
   url: string;
@@ -104,6 +104,7 @@ export interface CardReport {
   mercari: SourceResult<MercariData>;
   pricecharting: SourceResult<PriceChartingData>;
   fetchedAt: string;
+  partial?: boolean; // core only (card + Cardmarket); market sources still loading
 }
 
 /** One row of the daily scanner output (public/data/opportunities.json). */

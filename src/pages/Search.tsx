@@ -71,11 +71,16 @@ export function Search() {
       {state.error && <ErrorBox message={state.error} />}
       {state.results && !state.results.length && !state.loading && <p className="empty">Keine japanischen Karten für „{q}“ gefunden.</p>}
       <div className="grid">
-        {results.map((c) => {
+        {results.map((c, idx) => {
           const o = opps.get(c.id);
           return (
-            <CardLink key={c.id} id={c.id} className="grid-card">
-              <Thumb id={c.id} image={c.image} fallback={yuyuteiImg(o?.yytUrl)} alt={c.nameJa} />
+            <CardLink
+              key={c.id}
+              id={c.id}
+              className="grid-card"
+              preview={{ card: c, image: yuyuteiImg(o?.yytUrl) ?? o?.snkImg, cardmarket: o ? { trend: o.cmTrend, avg30: o.cmAvg30, low: o.cmLow } : null }}
+            >
+              <Thumb eager={idx < 9} id={c.id} image={c.image} fallback={yuyuteiImg(o?.yytUrl)} alt={c.nameJa} />
               <div className="grid-name">{c.nameEn ?? c.nameJa}</div>
               <div className="grid-meta">
                 {c.setId} {c.number}

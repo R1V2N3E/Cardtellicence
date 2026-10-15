@@ -321,3 +321,50 @@ a.row .row-label::after { content: ' ↗'; color: var(--muted); font-size: 11px;
 .pf-chart { margin-top: 4px; }
 .pf-chart-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .toast { cursor: pointer; }
+
+/* ===== Visual refresh ===== */
+:root { --radius: 18px; --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(0,0,0,.18); }
+@media (prefers-color-scheme: light) { :root { --shadow: 0 1px 2px rgba(16,24,40,.06), 0 6px 18px rgba(16,24,40,.06); } }
+body { letter-spacing: -0.005em; }
+.header h1 { font-size: 30px; letter-spacing: -0.025em; }
+.panel { border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+.panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+.chip { transition: background .15s, color .15s; }
+
+/* Image loading: shimmer until loaded, then fade in */
+.img-wrap { display: block; position: relative; overflow: hidden; background: var(--surface-2); }
+.img-wrap img { display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .25s ease; }
+.img-wrap.loaded img { opacity: 1; }
+.img-wrap.loading::after, .sk { background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.08) 50%, transparent 80%) var(--surface-2); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+.img-wrap.loading::after { content: ''; position: absolute; inset: 0; }
+@media (prefers-color-scheme: light) { .img-wrap.loading::after, .sk { background-color: #e9ecf2; background-image: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.7) 50%, transparent 80%); } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.sk { display: block; border-radius: 8px; }
+.sk-line { height: 14px; margin: 6px 0; width: 100%; }
+.sk-value { width: 90px; height: 16px; }
+.sk-card { width: 214px; height: 300px; border-radius: 12px; flex: none; }
+.sk-chart { height: 220px; border-radius: 12px; }
+.loading-line { color: var(--accent); }
+.gallery img { opacity: 0; transition: opacity .25s ease; }
+.gallery img.loaded { opacity: 1; }
+
+/* Deal rows */
+.deal { border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; gap: 14px; transition: transform .12s ease; }
+.deal .thumb { width: 60px; height: 84px; border-radius: 7px; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+.deal-name { font-size: 16px; }
+.deal-prices { flex-direction: column; gap: 3px; margin-top: 6px; }
+.deal-prices .de { font-weight: 650; }
+.deal-margin { min-width: 84px; padding: 8px 10px; border-radius: 12px; }
+.deal-margin strong { font-size: 17px; }
+
+/* Grids */
+.grid-card .thumb { box-shadow: 0 4px 14px rgba(0,0,0,.25); border-radius: 8px; }
+.pf-tile { box-shadow: var(--shadow); }
+.pf-img .thumb { box-shadow: 0 6px 16px rgba(0,0,0,.3); }
+
+/* Card page hero: artwork glow behind the gallery */
+.hero { position: relative; }
+.hero-bg { position: absolute; inset: -40px -16px auto; height: 380px; background-size: cover; background-position: center; filter: blur(40px) saturate(1.4); opacity: .35; z-index: -1; pointer-events: none; mask-image: linear-gradient(#000 40%, transparent); -webkit-mask-image: linear-gradient(#000 40%, transparent); }
+.gallery img { box-shadow: 0 14px 34px rgba(0,0,0,.35); }
+.margin-panel { background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface)); }
+.margin-flow strong { font-size: 23px; }

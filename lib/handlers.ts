@@ -41,7 +41,8 @@ export async function cardHandler(req: Request) {
   const id = url.searchParams.get('id') ?? '';
   if (!CARD_ID.test(id)) return fail('invalid card id', 400);
   try {
-    return json(await buildReport(id, url.origin), 900);
+    const part = url.searchParams.get('part') === 'core' ? 'core' : 'all';
+    return json(await buildReport(id, url.origin, part), 900);
   } catch (e) {
     return fail(e, 404);
   }

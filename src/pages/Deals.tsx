@@ -104,10 +104,19 @@ export function Deals() {
       )}
 
       <ul className="list">
-        {rows.map(({ o, m }) => (
+        {rows.map(({ o, m }, idx) => (
           <li key={o.id}>
-            <CardLink id={o.id} className="deal">
-              <Thumb id={o.id} image={o.image} fallback={yuyuteiImg(o.yytUrl) ?? o.snkImg} alt={o.nameJa} />
+            <CardLink
+              id={o.id}
+              className="deal"
+              preview={{
+                card: { id: o.id, setId: o.setId, setName: o.setName, localId: o.number.split('/')[0], number: o.number, nameJa: o.nameJa, nameEn: o.nameEn, rarity: o.rarity, image: o.image },
+                image: yuyuteiImg(o.yytUrl) ?? o.snkImg,
+                cardmarket: { trend: o.cmTrend, avg30: o.cmAvg30, low: o.cmLow },
+                fx: fx ?? data?.fx,
+              }}
+            >
+              <Thumb eager={idx < 6} id={o.id} image={o.image} fallback={yuyuteiImg(o.yytUrl) ?? o.snkImg} alt={o.nameJa} />
               <div className="deal-main">
                 <div className="deal-name">{o.nameEn ?? o.nameJa}</div>
                 <div className="deal-meta">

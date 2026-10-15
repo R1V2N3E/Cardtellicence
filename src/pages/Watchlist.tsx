@@ -32,7 +32,15 @@ export function Watchlist({ embedded = false }: { embedded?: boolean }) {
           const when = o ? `Scan ${ago(scan!.file.generatedAt)}` : w.last ? `angesehen ${ago(w.last.at)}` : 'öffnen für Preise';
           return (
             <li key={w.id}>
-              <CardLink id={w.id} className="deal">
+              <CardLink
+                id={w.id}
+                className="deal"
+                preview={{
+                  card: { id: w.id, setId: w.setId, setName: '', localId: w.number.split('/')[0], number: w.number, nameJa: w.nameJa, nameEn: w.nameEn, rarity: null, image: w.image },
+                  image: w.fallbackImage,
+                  cardmarket: o ? { trend: o.cmTrend, avg30: o.cmAvg30, low: o.cmLow } : null,
+                }}
+              >
                 <Thumb id={w.id} image={w.image} fallback={w.fallbackImage} alt={w.nameJa} />
                 <div className="deal-main">
                   <div className="deal-name">{w.nameEn ?? w.nameJa}</div>

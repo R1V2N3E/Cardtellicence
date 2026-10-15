@@ -286,7 +286,15 @@ export function Portfolio() {
                       </div>
                     </div>
                   ) : (
-                    <CardLink key={i.uid} id={i.cardId} className="pf-tile">
+                    <CardLink
+                      key={i.uid}
+                      id={i.cardId}
+                      className="pf-tile"
+                      preview={{
+                        card: { id: i.cardId, setId: i.setId, setName: i.setName, localId: i.number.split('/')[0], number: i.number, nameJa: i.nameJa, nameEn: i.nameEn, rarity: i.rarity, image: i.image },
+                        cardmarket: prices[i.cardId]?.source === 'cardmarket' ? prices[i.cardId] : null,
+                      }}
+                    >
                       {body}
                     </CardLink>
                   );

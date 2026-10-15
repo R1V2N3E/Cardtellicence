@@ -38,7 +38,10 @@ async function settle<T extends object>(p: Promise<T | null>, notFound: string, 
   }
 }
 
-export async function buildReport(id: string, origin?: string): Promise<CardReport> {
+const PENDING = { ok: false as const, error: '', pending: true };
+
+/** part 'core' answers fast with card data and Cardmarket prices only; the client loads the rest in parallel. */
+export async function buildReport(id: string, origin?: string, part: 'all' | 'core' = 'all'): Promise<CardReport> {
   if (isExternalId(id)) return buildExternalReport(id);
   const [{ raw, detail }, fx] = await Promise.all([getCard(id), getFx()]);
   const cardmarket = await cardmarketFor(raw).catch(() => null);
@@ -53,6 +56,21 @@ export async function buildReport(id: string, origin?: string): Promise<CardRepo
     'Card Rush': `https://www.cardrush-pokemon.jp/product-list?keyword=${encodeURIComponent(`${nameJa} ${number}`)}`,
     'PriceCharting': `https://www.pricecharting.com/search-products?q=${encodeURIComponent(`pokemon japanese ${nameEn ?? nameJa} ${Number(localId) || localId}`)}&type=prices`,
   };
+
+  if (part === 'core') {
+    return {
+      card: detail,
+      fx,
+      links,
+      cardmarket: cardmarket ? { ok: true, ...cardmarket } : { ok: false, error: 'No Cardmarket price guide entry', url: links.Cardmarket },
+      yuyutei: PENDING,
+      snkrdunk: PENDING,
+      mercari: PENDING,
+      pricecharting: PENDING,
+      fetchedAt: new Date().toISOString(),
+      partial: true,
+    };
+  }
 
   const [yuyutei, snkrdunk, mercari, pricecharting] = await Promise.all([
     settle(

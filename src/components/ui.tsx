@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { prefetchCard, type CardPreview } from '../cardCache';
 import { cardImg } from '../format';
 
 export function Header({ title, sub, right, back }: { title: string; sub?: ReactNode; right?: ReactNode; back?: boolean }) {
@@ -32,16 +33,54 @@ export function Chips<T extends string>({ value, options, onChange }: { value: T
 }
 
 /**
- * Card thumbnail with a fallback chain: TCGdex artwork → shop photo → /api/img (server picks
- * the best remaining source). Advances on load errors and restarts when the sources change.
+ * Card picture with a fallback chain: TCGdex artwork → known shop photo → /api/img (server picks
+ * the best remaining source). Shows a shimmer until loaded, fades in, and moves on to the next
+ * source on error or when a source hangs.
  */
-export function Thumb({ id, image, fallback, alt, size = 'low' }: { id: string; image: string | null; fallback?: string | null; alt: string; size?: 'low' | 'high' }) {
+export function Thumb({
+  id,
+  image,
+  fallback,
+  alt,
+  size = 'low',
+  eager = false,
+  className = 'thumb',
+}: {
+  id: string;
+  image: string | null;
+  fallback?: string | null;
+  alt: string;
+  size?: 'low' | 'high';
+  eager?: boolean;
+  className?: string;
+}) {
   const sources = [...new Set([cardImg(image, size), fallback, `/api/img?id=${encodeURIComponent(id)}${size === 'high' ? '&size=high' : ''}`])].filter(Boolean) as string[];
   const key = sources.join('|');
-  const [state, setState] = useState({ key, i: 0 });
-  const i = state.key === key ? state.i : 0;
-  if (i >= sources.length) return <div className="thumb ph" aria-label={alt}>?</div>;
-  return <img className="thumb" src={sources[i]} alt={alt} loading="lazy" decoding="async" onError={() => setState({ key, i: i + 1 })} />;
+  const [state, setState] = useState({ key, i: 0, loaded: false });
+  const cur = state.key === key ? state : { key, i: 0, loaded: false };
+  const next = () => setState({ key, i: cur.i + 1, loaded: false });
+
+  // A source that hasn't delivered after a few seconds is skipped (the last one is kept).
+  useEffect(() => {
+    if (cur.loaded || cur.i >= sources.length - 1) return;
+    const t = setTimeout(next, 6000);
+    return () => clearTimeout(t);
+  }, [key, cur.i, cur.loaded]);
+
+  if (cur.i >= sources.length) return <div className={`${className} ph`} aria-label={alt}>?</div>;
+  return (
+    <span className={`${className} img-wrap ${cur.loaded ? 'loaded' : 'loading'}`}>
+      <img
+        src={sources[cur.i]}
+        alt={alt}
+        loading={eager ? 'eager' : 'lazy'}
+        fetchPriority={eager ? 'high' : 'auto'}
+        decoding="async"
+        onLoad={() => setState({ key, i: cur.i, loaded: true })}
+        onError={next}
+      />
+    </span>
+  );
 }
 
 export function Spinner({ label = 'Lädt…' }: { label?: string }) {
@@ -57,9 +96,15 @@ export function ErrorBox({ message }: { message: string }) {
   return <div className="error-box">⚠︎ {message}</div>;
 }
 
-export function CardLink({ id, children, className }: { id: string; children: ReactNode; className?: string }) {
+/** Link to a card page: hands over what the list already knows and starts loading on touch. */
+export function CardLink({ id, children, className, preview }: { id: string; children: ReactNode; className?: string; preview?: CardPreview }) {
   return (
-    <Link to={`/card/${encodeURIComponent(id)}`} className={className}>
+    <Link
+      to={`/card/${encodeURIComponent(id)}`}
+      state={preview ? { preview } : undefined}
+      className={className}
+      onPointerDown={() => prefetchCard(id)}
+    >
       {children}
     </Link>
   );
