@@ -123,3 +123,15 @@ describe('scan helpers', () => {
     expect(parseSnkLabel('リザードンex SAR [SV2a 201/165](強化拡張パック「ポケモンカード151」)')?.rarity).toBe('SAR');
   });
 });
+
+describe('deal buy source fallback', () => {
+  it('uses the cheapest scanned price when the chosen source has none (e.g. Mercari)', () => {
+    const opts: BuyOption[] = [
+      { source: 'yuyutei', label: 'Yuyu-tei', jpy: 59800 },
+      { source: 'snkrdunk', label: 'SNKRDUNK', jpy: 41000 },
+    ];
+    expect(pickBuy(opts, 'mercari')).toBeNull();
+    expect(pickBuy(opts, 'mercari', true)?.source).toBe('snkrdunk');
+    expect(pickBuy(opts, 'yuyutei', true)?.source).toBe('yuyutei');
+  });
+});

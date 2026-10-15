@@ -4,6 +4,7 @@ import { CardLink, Chips, ErrorBox, Header, Spinner, Thumb } from '../components
 import { ago, fmtEur, fmtJpy, fmtPct, fmtSigned, marginClass, yuyuteiImg } from '../format';
 import { BUY_LABEL, opportunityMargin, SELL_LABEL } from '../margin';
 import { useSettings } from '../state';
+import { usePullToRefresh, useSwipeTabs } from '../gestures';
 import { SealedSheet, sealedLabel, sealedMargin } from '../components/SealedSheet';
 import type { SealedItem } from '../../lib/types';
 
@@ -44,6 +45,13 @@ export function Deals() {
   const [onlyPositive, setOnlyPositive] = useState(true);
   const [kind, setKind] = useState<'cards' | 'sealed'>('cards');
   const [openSealed, setOpenSealed] = useState<SealedItem | null>(null);
+  const { pull, ready } = usePullToRefresh(() => setRefresh((r) => r + 1), !openSealed);
+  useSwipeTabs(['cards', 'sealed'], kind, setKind, !openSealed);
+  const resetFilters = () => {
+    setOnlyPositive(false);
+    setSetFilter('all');
+    setText('');
+  };
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -76,11 +84,21 @@ export function Deals() {
 
   return (
     <>
+      <div className="pull" style={{ height: pull }} aria-hidden={!pull}>
+        {pull > 10 && (
+          <span className={ready ? 'ready' : ''}>
+            <svg viewBox="0 0 24 24" style={{ transform: `rotate(${pull * 3}deg)` }}>
+              <path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" />
+            </svg>
+            {ready ? 'Loslassen zum Aktualisieren' : 'Ziehen zum Aktualisieren'}
+          </span>
+        )}
+      </div>
       <Header
         title="Deals"
         sub={
           data
-            ? `Kauf ${BUY_LABEL[settings.buySource]} → Verkauf Cardmarket ${SELL_LABEL[settings.sellRef]} · Scan ${ago(data.generatedAt)}`
+            ? `Kauf ${settings.buySource === 'mercari' ? 'Günstigster (Mercari nicht im Scan)' : BUY_LABEL[settings.buySource]} → Verkauf ${SELL_LABEL[settings.sellRef]} · Scan ${ago(data.generatedAt)}`
             : 'Margen Japan → Deutschland'
         }
         right={
@@ -132,6 +150,14 @@ export function Deals() {
       {kind === 'sealed' && (
         <>
           {data && !data.sealed?.length && <p className="empty">Sealed-Daten kommen mit dem nächsten täglichen Scan.</p>}
+          {data && !!data.sealed?.length && sealedRows.length < data.sealed.length && (
+            <div className="filter-note">
+              {sealedRows.length} von {data.sealed.length} angezeigt{onlyPositive ? ' (nur profitable)' : ''}.
+              <button className="chip" onClick={resetFilters}>
+                Alle zeigen
+              </button>
+            </div>
+          )}
           <ul className="list">
             {sealedRows.map(({ x, m }) => (
               <li key={x.id}>
@@ -198,7 +224,14 @@ export function Deals() {
         ))}
       </ul>
       )}
-      {kind === 'cards' && data && !rows.length && <p className="empty">Keine Treffer. Senke den Mindestpreis in den Einstellungen oder zeige ausverkaufte Karten.</p>}
+      {kind === 'cards' && data && !rows.length && (
+        <div className="empty">
+          <p>Keine Treffer mit diesen Filtern.</p>
+          <button className="link-btn" onClick={resetFilters}>
+            Filter zurücksetzen
+          </button>
+        </div>
+      )}
     </>
   );
 }

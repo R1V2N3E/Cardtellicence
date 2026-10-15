@@ -30,9 +30,12 @@ export const SELL_LABEL: Record<SellRef, string> = {
   low: 'Niedrigster',
 };
 
-export function pickBuy(options: BuyOption[], source: BuySource): BuyOption | null {
-  if (source !== 'cheapest') return options.find((o) => o.source === source) ?? null;
-  return options.reduce<BuyOption | null>((best, o) => (!best || o.jpy < best.jpy ? o : best), null);
+const cheapest = (options: BuyOption[]) => options.reduce<BuyOption | null>((best, o) => (!best || o.jpy < best.jpy ? o : best), null);
+
+/** The chosen source, or — when that source has no price for this item — the cheapest available one. */
+export function pickBuy(options: BuyOption[], source: BuySource, fallback = false): BuyOption | null {
+  if (source === 'cheapest') return cheapest(options);
+  return options.find((o) => o.source === source) ?? (fallback ? cheapest(options) : null);
 }
 
 export function computeMargin(buy: BuyOption | null, sellEur: number | null, jpyToEur: number): Margin {
@@ -53,7 +56,8 @@ export function opportunityMargin(o: Opportunity, s: Settings, jpyToEur: number)
     options.push({ source: 'yuyutei', label: 'Yuyu-tei', jpy: o.yytJpy, note: o.yytStock === 0 ? 'ausverkauft' : staleNote(o.yytAsOf) });
   if (o.snkAskJpy) options.push({ source: 'snkrdunk', label: 'SNKRDUNK', jpy: o.snkAskJpy });
   const sell = s.sellRef === 'trend' ? o.cmTrend : s.sellRef === 'avg30' ? o.cmAvg30 : s.sellRef === 'low' ? o.cmLow : o.cmTrend;
-  return computeMargin(pickBuy(options, s.buySource), sell, jpyToEur);
+  // The daily scan has no Mercari prices: fall back to the cheapest scanned source instead of hiding the card.
+  return computeMargin(pickBuy(options, s.buySource, true), sell, jpyToEur);
 }
 
 export function reportBuyOptions(r: CardReport, includeSoldOut: boolean): BuyOption[] {

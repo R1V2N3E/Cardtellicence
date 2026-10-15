@@ -7,6 +7,7 @@ import { CardLink, Chips, Thumb } from '../components/ui';
 import { ago, fmtEur, fmtJpy, fmtSigned, marginClass } from '../format';
 import { CONDITIONS, readPortfolioHistory, recordPortfolioValue, useCollection, type CollectionItem, type Condition } from '../state';
 import { Watchlist } from './Watchlist';
+import { usePullToRefresh, useSwipeTabs } from '../gestures';
 
 type Tab = 'cards' | 'sealed' | 'sets' | 'watch';
 const isSealed = (i: CollectionItem) => i.kind === 'sealed' || i.cardId.startsWith('cm-');
@@ -22,9 +23,12 @@ export function Portfolio() {
   const navigate = useNavigate();
   const { items, update, remove, replaceAll } = useCollection();
   const [tab, setTab] = useState<Tab>('cards');
+  const [reloadKey, setReloadKey] = useState(0);
+  const { pull, ready } = usePullToRefresh(() => setReloadKey((k) => k + 1));
   const [sort, setSort] = useState<Sort>('value');
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState(false);
+  useSwipeTabs<Tab>(['cards', 'sealed', 'sets', 'watch'], tab, setTab, !editing);
   const [menu, setMenu] = useState(false);
   const [prices, setPrices] = useState<Record<string, LivePrice | null>>({});
   const [fx, setFx] = useState<number | null>(null);
@@ -57,7 +61,7 @@ export function Portfolio() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [ids.join(',')]);
+  }, [ids.join(','), reloadKey]);
 
   useEffect(() => {
     fetch('/api/fx').then((r) => r.json()).then((f) => setFx(f.jpyToEur)).catch(() => {});
@@ -156,6 +160,9 @@ export function Portfolio() {
 
   return (
     <>
+      <div className="pull" style={{ height: pull }}>
+        {pull > 10 && <span className={ready ? 'ready' : ''}>{ready ? 'Loslassen zum Aktualisieren' : 'Ziehen zum Aktualisieren'}</span>}
+      </div>
       <AppBar />
       <nav className="seg-tabs">
         {(
