@@ -7,7 +7,7 @@ import type { Settings, SellRef } from '../state';
 import { AddSheet } from './AddSheet';
 import { CostLines } from './CostLines';
 import { PriceChart } from './PriceChart';
-import { Chips } from './ui';
+import { Chips, Thumb } from './ui';
 
 export const sealedLabel = (s: SealedItem) => (s.kind === 'box' ? 'Display (Box)' : 'Booster (Pack)');
 
@@ -60,7 +60,7 @@ export function SealedSheet({ item, fx, settings, onClose }: { item: SealedItem;
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" />
         <div className="sealed-head">
-          <img src={item.image ?? `/api/img?set=${encodeURIComponent(item.setId)}`} alt="" />
+          <Thumb id={item.id} image={null} fallback={item.image ?? `/api/img?set=${encodeURIComponent(item.setId)}`} alt={item.nameEn} className="thumb sealed-thumb pack-thumb" />
           <div>
             <div className="deal-name big">{item.nameEn}</div>
             <div className="deal-meta">
