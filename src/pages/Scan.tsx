@@ -5,7 +5,7 @@ import { ScanAnimation } from '../components/ScanAnimation';
 import type { CardSummary } from '../../lib/types';
 import { api, ApiError, type LivePrice } from '../api';
 import { AddSheet } from '../components/AddSheet';
-import { Logo } from '../components/Logo';
+import { ScanModes } from '../components/ScanModes';
 import { Spinner, Thumb } from '../components/ui';
 import { cardImg, fmtEur } from '../format';
 
@@ -168,7 +168,7 @@ export function Scan() {
         <button className="icon-btn ghost" onClick={() => navigate(-1)} aria-label="Zurück">
           <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
-        <Logo />
+        <ScanModes mode="card" />
         <button className="icon-btn ghost" onClick={() => navigate('/search')} aria-label="Suchen">
           <svg viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5" /></svg>
         </button>

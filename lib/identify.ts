@@ -80,37 +80,45 @@ let client: Anthropic | null = null;
 
 export const identifyConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY);
 
-function anthropic(): Anthropic {
+export function anthropic(): Anthropic {
   // Organization-level API keys (not scoped to a workspace) must name the workspace per request.
   const workspace = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
   client ??= new Anthropic(workspace ? { defaultHeaders: { 'anthropic-workspace-id': workspace } } : {});
   return client;
 }
 
-type ImageMedia = 'image/jpeg' | 'image/png' | 'image/webp';
+export type ImageMedia = 'image/jpeg' | 'image/png' | 'image/webp';
 
-type Effort = 'low' | 'medium';
+type Effort = 'low' | 'medium' | 'high';
 
 /**
  * One structured call. Speed matters here (someone is holding a card up to the camera), so it
  * runs in fast mode (same model, faster output); when fast mode is rate-limited or unavailable
  * it is repeated at standard speed.
  */
-async function structured<T>(content: Anthropic.Beta.BetaContentBlockParam[], schema: object, effort: Effort): Promise<T> {
+export async function structured<T>(
+  content: Anthropic.Beta.BetaContentBlockParam[],
+  schema: object,
+  effort: Effort,
+  opts: { fast?: boolean; maxTokens?: number } = {},
+): Promise<T> {
   const params = {
     model: 'claude-opus-5-5',
-    max_tokens: 4000,
+    max_tokens: opts.maxTokens ?? 4000,
     fallbacks: 'default' as const,
     output_config: { effort, format: { type: 'json_schema' as const, schema: schema as Record<string, unknown> } },
     messages: [{ role: 'user' as const, content }],
   };
-  const response = await anthropic()
-    .beta.messages.create({ ...params, speed: 'fast', betas: ['server-side-fallback-2026-07-01', 'fast-mode-2026-02-01'] })
-    .catch((e) => {
-      if (e instanceof Anthropic.RateLimitError || e instanceof Anthropic.BadRequestError || e instanceof Anthropic.PermissionDeniedError)
-        return anthropic().beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'] });
-      throw e;
-    });
+  const standard = () => anthropic().beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'] });
+  const response =
+    opts.fast === false
+      ? await standard()
+      : await anthropic()
+          .beta.messages.create({ ...params, speed: 'fast', betas: ['server-side-fallback-2026-07-01', 'fast-mode-2026-02-01'] })
+          .catch((e) => {
+            if (e instanceof Anthropic.RateLimitError || e instanceof Anthropic.BadRequestError || e instanceof Anthropic.PermissionDeniedError) return standard();
+            throw e;
+          });
   if (response.stop_reason === 'refusal') throw new Error('Die Erkennung wurde für dieses Bild abgelehnt');
   const text = response.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')?.text;
   if (!text) throw new Error('Keine Antwort der Erkennung');
@@ -222,7 +230,7 @@ function score(r: CardReading, c: Candidate): Scored {
   return { ...c, score: s, checks };
 }
 
-async function imageBlock(url: string): Promise<Anthropic.Beta.BetaContentBlockParam | null> {
+export async function imageBlock(url: string): Promise<Anthropic.Beta.BetaContentBlockParam | null> {
   try {
     const res = await request(url, {}, 10000, 1);
     const type = res.headers.get('content-type')?.split(';')[0] ?? '';

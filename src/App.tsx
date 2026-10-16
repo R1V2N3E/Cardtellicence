@@ -1,3 +1,6 @@
+import { VisionScan } from './pages/VisionScan';
+import { AlertBanner, useAlertCheck } from './ai/alerts';
+import { Ai } from './pages/Ai';
 import { ZoomViewer } from './components/Zoom';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { CardPage } from './pages/CardPage';
@@ -13,7 +16,7 @@ import { usePushSync } from './push';
 
 const TABS = [
   { to: '/', label: 'Deals', icon: 'M3 17l6-6 4 4 8-8M21 7v6M21 7h-6' },
-  { to: '/search', label: 'Suche', icon: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5' },
+  { to: '/search', label: 'KI & Suche', icon: 'M10.5 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12zM20 20l-5-5M19 2.5l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z' },
   { to: '/portfolio', label: 'Portfolio', icon: 'M7 4h11a1 1 0 0 1 1 1v13M4 7h11a1 1 0 0 1 1 1v12H5a1 1 0 0 1-1-1z' },
   { to: '/market', label: 'Markt', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
 ];
@@ -30,15 +33,25 @@ function Tab({ to, label, icon }: (typeof TABS)[number]) {
 }
 
 export function App() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   usePushSync();
-  if (pathname === '/scan') return (<><Scan /><ZoomViewer /></>);
+  const alerts = useAlertCheck();
+  if (pathname === '/scan') {
+    const mode = new URLSearchParams(search).get('mode');
+    return (
+      <>
+        {mode === 'shop' || mode === 'condition' ? <VisionScan mode={mode} /> : <Scan />}
+        <ZoomViewer />
+      </>
+    );
+  }
   return (
     <div className="app">
       <main className="content">
         <Routes>
           <Route path="/" element={<Deals />} />
           <Route path="/search" element={<Search />} />
+          <Route path="/ai" element={<Ai />} />
           <Route path="/card/:id" element={<CardPage />} />
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/watchlist" element={<Watchlist />} />
@@ -49,6 +62,7 @@ export function App() {
         </Routes>
       </main>
       <ZoomViewer />
+      <AlertBanner {...alerts} />
       <nav className="tabbar">
         <Tab {...TABS[0]} />
         <Tab {...TABS[3]} />

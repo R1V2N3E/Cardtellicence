@@ -1,3 +1,4 @@
+import { AlertsPanel } from '../ai/alerts';
 import { useEffect, useState } from 'react';
 import type { Opportunity, OpportunityFile } from '../../lib/types';
 import { loadOpportunities } from '../api';
@@ -20,6 +21,7 @@ export function Watchlist({ embedded = false }: { embedded?: boolean }) {
   return (
     <>
       {!embedded && <Header title="Merkliste" sub={`${list.length} Karten · auf diesem iPhone gespeichert`} />}
+      <AlertsPanel />
       {!list.length && <p className="empty">Tippe auf ☆ bei einer Karte, um sie hier zu beobachten.</p>}
       <ul className="list">
         {list.map((w) => {

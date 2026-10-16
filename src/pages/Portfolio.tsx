@@ -1,3 +1,6 @@
+import { SellSheet } from '../components/SellSheet';
+import { TaxView } from '../components/TaxView';
+import { AskAi } from '../components/AskAi';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type LivePrice } from '../api';
@@ -9,7 +12,7 @@ import { CONDITIONS, readPortfolioHistory, readPortfolioTicks, recordPortfolioTi
 import { Watchlist } from './Watchlist';
 import { usePullToRefresh, useSwipeTabs } from '../gestures';
 
-type Tab = 'cards' | 'sealed' | 'sets' | 'watch';
+type Tab = 'cards' | 'sealed' | 'sets' | 'watch' | 'tax';
 const isSealed = (i: CollectionItem) => i.kind === 'sealed' || i.cardId.startsWith('cm-');
 type Sort = 'value' | 'recent' | 'name' | 'profit';
 const REFRESH_MS = 5 * 60_000;
@@ -51,7 +54,8 @@ export function Portfolio() {
   const [q, setQ] = useState('');
   const [setFilter, setSetFilter] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  useSwipeTabs<Tab>(['cards', 'sealed', 'sets', 'watch'], tab, setTab, !editing);
+  useSwipeTabs<Tab>(['cards', 'sealed', 'sets', 'watch', 'tax'], tab, setTab, !editing);
+  const [selling, setSelling] = useState<CollectionItem | null>(null);
   const [menu, setMenu] = useState(false);
   // Start from the last known prices, so the value shows at once and is then refreshed.
   const [rawPrices, setPrices] = useState<Record<string, LivePrice | null>>(() => readPriceCache().prices);
@@ -236,6 +240,12 @@ export function Portfolio() {
         {pull > 10 && <span className={ready ? 'ready' : ''}>{ready ? 'Loslassen zum Aktualisieren' : 'Ziehen zum Aktualisieren'}</span>}
       </div>
       <AppBar />
+      {items.length > 0 && (
+        <AskAi
+          ctx="portfolio"
+          prompts={['Portfolio-Check: Wo stehe ich?', 'Was sollte ich jetzt verkaufen?', 'Was wird bald steuerfrei?', 'Wo ist mein Klumpenrisiko?']}
+        />
+      )}
       <nav className="seg-tabs">
         {(
           [
@@ -243,6 +253,7 @@ export function Portfolio() {
             ['sealed', 'Sealed'],
             ['sets', 'Sets'],
             ['watch', 'Merkliste'],
+            ['tax', 'Steuer'],
           ] as [Tab, string][]
         ).map(([t, label]) => (
           <button key={t} className={tab === t ? 'seg on' : 'seg'} onClick={() => setTab(t)}>
@@ -255,7 +266,7 @@ export function Portfolio() {
         <Watchlist embedded />
       ) : (
         <>
-          <div className="search-row">
+          <div className="search-row" hidden={tab === 'tax'}>
             <div className="search-box">
               <svg viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5" /></svg>
               <input placeholder="Karten suchen" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -384,6 +395,9 @@ export function Portfolio() {
                             </option>
                           ))}
                         </select>
+                        <button onClick={() => setSelling(i)} aria-label="Verkauf eintragen" title="Verkauf eintragen">
+                          💶
+                        </button>
                         <button className="danger" onClick={() => confirm('Karte entfernen?') && remove(i.uid)} aria-label="Entfernen">
                           ✕
                         </button>
@@ -414,6 +428,8 @@ export function Portfolio() {
             </>
           )}
 
+          {tab === 'tax' && <TaxView items={items} unitValue={unitValue} />}
+          {selling && <SellSheet item={selling} valueEur={unitValue(selling)} fx={fx} onClose={() => setSelling(null)} />}
           {tab === 'sets' && (
             <ul className="list">
               {sets.map((s) => (

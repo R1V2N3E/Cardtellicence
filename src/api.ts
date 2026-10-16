@@ -87,6 +87,25 @@ export const api = {
       if (done) throw new ApiError('failed', 'Verbindung abgebrochen – bitte erneut versuchen.');
     }
   },
+  /** Photo analyses: a shop showcase, or the condition of one card (front, optional back). */
+  vision: async <T,>(task: 'shop' | 'condition', images: string[], cardId?: string | null): Promise<T> => {
+    const res = await fetch('/api/vision', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-access-code': readAccessCode() },
+      body: JSON.stringify({ task, images, cardId: cardId ?? undefined }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok)
+      throw new ApiError(
+        body.error ?? `http_${res.status}`,
+        body.error === 'access_code'
+          ? 'Zugangscode fehlt oder ist falsch – in den Einstellungen eintragen.'
+          : body.error === 'not_configured'
+            ? 'Die KI ist auf dem Server nicht eingerichtet.'
+            : (body.error ?? `HTTP ${res.status}`),
+      );
+    return body as T;
+  },
   market: () => getJson<MarketFile>('/data/market.json').catch(() => null),
   history: (setId: string) => getJson<HistoryFile>(`/data/history/${encodeURIComponent(setId)}.json`).catch(() => ({}) as HistoryFile),
 };

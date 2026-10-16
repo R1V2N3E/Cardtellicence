@@ -2,7 +2,7 @@ import { mirror, requestPersistence } from './storage';
 // Client-side state: settings and watchlist live in this device's localStorage.
 import { useCallback, useEffect, useState } from 'react';
 
-function read<T>(key: string, fallback: T): T {
+export function read<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
     return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
@@ -10,14 +10,14 @@ function read<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-function readList<T>(key: string): T[] {
+export function readList<T>(key: string): T[] {
   try {
     return JSON.parse(localStorage.getItem(key) ?? '[]');
   } catch {
     return [];
   }
 }
-function write(key: string, value: unknown) {
+export function write(key: string, value: unknown) {
   const raw = JSON.stringify(value);
   try {
     localStorage.setItem(key, raw);
@@ -28,7 +28,7 @@ function write(key: string, value: unknown) {
   window.dispatchEvent(new CustomEvent('ct-storage', { detail: key }));
 }
 
-function useStored<T>(key: string, load: () => T): [T, (v: T) => void] {
+export function useStored<T>(key: string, load: () => T): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(load);
   useEffect(() => {
     const on = (e: Event) => (e as CustomEvent).detail === key && setValue(load());
@@ -161,21 +161,29 @@ export interface CollectionItem {
   condition: Condition;
   /** What was paid per copy, in the currency it was paid in. */
   cost?: { amount: number; currency: 'JPY' | 'EUR' } | null;
+  /** Purchase date (yyyy-mm-dd) for the holding period; addedAt when not entered. */
+  boughtAt?: string;
   addedAt: string;
+}
+
+/** Add to the collection; the same card, condition, cost and purchase date just raises the quantity. */
+export function addCollectionItem(item: Omit<CollectionItem, 'uid' | 'addedAt'>) {
+  void requestPersistence();
+  const cur = readList<CollectionItem>('ct-collection');
+  const same = cur.find(
+    (c) =>
+      c.cardId === item.cardId &&
+      c.condition === item.condition &&
+      (c.boughtAt ?? null) === (item.boughtAt ?? null) &&
+      JSON.stringify(c.cost ?? null) === JSON.stringify(item.cost ?? null),
+  );
+  if (same) return write('ct-collection', cur.map((c) => (c === same ? { ...c, qty: c.qty + item.qty } : c)));
+  write('ct-collection', [{ ...item, uid: crypto.randomUUID(), addedAt: new Date().toISOString() }, ...cur]);
 }
 
 export function useCollection() {
   const [items, setItems] = useStored<CollectionItem[]>('ct-collection', () => readList<CollectionItem>('ct-collection'));
-  const add = (item: Omit<CollectionItem, 'uid' | 'addedAt'>) => {
-    void requestPersistence();
-    const cur = readList<CollectionItem>('ct-collection');
-    // Same card, condition and cost → just raise the quantity.
-    const same = cur.find(
-      (c) => c.cardId === item.cardId && c.condition === item.condition && JSON.stringify(c.cost ?? null) === JSON.stringify(item.cost ?? null),
-    );
-    if (same) return setItems(cur.map((c) => (c === same ? { ...c, qty: c.qty + item.qty } : c)));
-    setItems([{ ...item, uid: crypto.randomUUID(), addedAt: new Date().toISOString() }, ...cur]);
-  };
+  const add = addCollectionItem;
   const update = (uid: string, patch: Partial<CollectionItem>) =>
     setItems(readList<CollectionItem>('ct-collection').map((c) => (c.uid === uid ? { ...c, ...patch } : c)));
   const remove = (uid: string) => setItems(readList<CollectionItem>('ct-collection').filter((c) => c.uid !== uid));

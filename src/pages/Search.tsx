@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { CardSummary, Opportunity } from '../../lib/types';
 import { api, loadOpportunities } from '../api';
 import { CardLink, ErrorBox, Header, Spinner, Thumb } from '../components/ui';
 import { fmtEur, yuyuteiImg } from '../format';
+import { readChat } from '../ai/store';
+import { AI_SUGGESTIONS, AI_TOOLS } from './Ai';
+
+/** A question or a wish rather than a card name: goes to the assistant on Enter. */
+const looksLikeQuestion = (s: string) =>
+  /\?\s*$/.test(s) || s.trim().split(/\s+/).length >= 4 || /^(was|wie|wo|wann|welche|welcher|warum|lohnt|soll|kann|zeig|finde|schreib|vergleich|erklär|hilf|gib|ich|mein|meine)\b/i.test(s.trim());
 
 const EXAMPLES = ['Charizard', 'Glurak', '116/80', 'SV2a 201', 'M2a', 'ピカチュウ'];
 
 export function Search() {
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const [input, setInput] = useState(q);
@@ -45,19 +52,33 @@ export function Search() {
 
   return (
     <>
-      <Header title="Suche" sub="Name (DE/EN/JP) · Nummer wie 116/80 · Set + Nummer" />
+      <Header title="KI & Suche" sub="Karte suchen – oder einfach fragen" />
       <div className="toolbar">
         <input
           className="input big"
           type="search"
           autoCapitalize="off"
           autoCorrect="off"
-          placeholder="z. B. Glurak, 116/80, SV2a 201"
+          placeholder="Glurak, 116/80 … oder eine Frage"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && setParams(input ? { q: input } : {})}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            if (looksLikeQuestion(input)) navigate(`/ai?q=${encodeURIComponent(input)}`);
+            else setParams(input ? { q: input } : {});
+          }}
         />
-        {!q && (
+        {input.trim() && (
+          <button className={`ai-ask ${looksLikeQuestion(input) ? 'strong' : ''}`} onClick={() => navigate(`/ai?q=${encodeURIComponent(input)}`)}>
+            <span className="ai-orb small" />
+            <span>
+              <b>KI fragen</b>
+              <small>„{input.trim()}“</small>
+            </span>
+            <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></svg>
+          </button>
+        )}
+        {!q && !input && (
           <div className="chips wrap">
             {EXAMPLES.map((ex) => (
               <button key={ex} className="chip" onClick={() => (setInput(ex), setParams({ q: ex }))}>
@@ -67,6 +88,7 @@ export function Search() {
           </div>
         )}
       </div>
+      {!q && !input && <AiHub />}
       {state.loading && <Spinner label="Suche…" />}
       {state.error && <ErrorBox message={state.error} />}
       {state.results && !state.results.length && !state.loading && <p className="empty">Keine japanischen Karten für „{q}“ gefunden.</p>}
@@ -91,5 +113,39 @@ export function Search() {
         })}
       </div>
     </>
+  );
+}
+
+function AiHub() {
+  const navigate = useNavigate();
+  const hasChat = readChat().length > 0;
+  return (
+    <section className="ai-hub">
+      <Link to="/ai" className="ai-hub-hero">
+        <span className="ai-orb" />
+        <div>
+          <b>Cardtelligence KI</b>
+          <small>{hasChat ? 'Unterhaltung fortsetzen' : 'Dein Händler, Analyst und Steuer-Wächter in einem'}</small>
+        </div>
+        <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></svg>
+      </Link>
+      <div className="ai-suggest compact">
+        {AI_SUGGESTIONS.slice(0, 4).map((s) => (
+          <button key={s.text} className="ai-sugg" onClick={() => navigate(`/ai?q=${encodeURIComponent(s.text)}`)}>
+            <span>{s.icon}</span>
+            {s.text}
+          </button>
+        ))}
+      </div>
+      <div className="ai-tools">
+        {AI_TOOLS.slice(0, 2).map((t) => (
+          <Link key={t.to} to={t.to} className="ai-tool">
+            <span className="ai-tool-icon">{t.icon}</span>
+            <b>{t.title}</b>
+            <small>{t.sub}</small>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }

@@ -1,3 +1,4 @@
+import { AskAi } from '../components/AskAi';
 import { openZoom } from '../components/Zoom';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
@@ -119,6 +120,17 @@ export function CardPage() {
           + Zur Sammlung{owned ? ` (${owned} im Besitz)` : ''}
         </button>
       </section>
+
+      <AskAi
+        ctx={`card:${card.id}`}
+        prompts={[
+          'Lohnt sich der Kauf in Japan gerade?',
+          'Wo verkaufe ich diese Karte am besten?',
+          'Wie hat sich der Preis entwickelt – und warum?',
+          'Schreib mir ein Inserat dafür',
+          owned ? 'Wann kann ich sie steuerfrei verkaufen?' : 'Was ist ein guter Preis im Laden in Japan?',
+        ]}
+      />
 
       {/* Margin calculator */}
       <section className="panel margin-panel">

@@ -23,6 +23,8 @@ export function AddSheet({
   const [condition, setCondition] = useState<Condition>('NM');
   const [cost, setCost] = useState('');
   const [currency, setCurrency] = useState<'JPY' | 'EUR'>('JPY');
+  const today = new Date().toISOString().slice(0, 10);
+  const [bought, setBought] = useState(today);
 
   const submit = () => {
     const amount = Number(cost.replace(',', '.'));
@@ -41,6 +43,7 @@ export function AddSheet({
       qty,
       condition,
       cost: cost && amount > 0 ? { amount, currency } : null,
+      boughtAt: bought || today,
     });
     onAdded?.();
     onClose();
@@ -89,6 +92,11 @@ export function AddSheet({
             </button>
           </div>
         </label>
+        <label className="field">
+          Gekauft am
+          <input className="input date-input" type="date" max={today} value={bought} onChange={(e) => setBought(e.target.value)} />
+        </label>
+        <p className="hint">Das Kaufdatum zählt für die Haltedauer: nach einem Jahr ist ein privater Verkauf steuerfrei.</p>
         <button className="primary-btn" onClick={submit}>
           Zur Sammlung hinzufügen
         </button>
