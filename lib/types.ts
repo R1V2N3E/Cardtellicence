@@ -135,6 +135,7 @@ export interface Opportunity {
   image: string | null;
   cmTrend: number | null;
   cmAvg30: number | null;
+  cmAvg7?: number | null;
   cmLow: number | null;
   cmId?: number | null; // Cardmarket idProduct (for live re-pricing)
   yytJpy: number | null;
@@ -169,6 +170,15 @@ export interface SealedItem {
   crStock?: number | null;
   crBuyJpy?: number | null;
   crUrl?: string | null;
+}
+
+/**
+ * Daily market index (public/data/market.json): per day and set, the sum of the Cardmarket trend
+ * prices of all tracked cards, the sum of their Card Rush prices (JPY) and how many cards that is.
+ */
+export interface MarketFile {
+  updated: string;
+  days: Record<string, Record<string, [number, number, number]>>;
 }
 
 export interface OpportunityFile {

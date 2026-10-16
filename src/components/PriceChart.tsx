@@ -41,6 +41,12 @@ export function PriceChart({ series, height = 220, intraday = false }: { series:
   useEffect(() => {
     if (!canvas.current) return;
     const grid = css('--grid');
+    // A nearly flat line gets an axis of at least ±2 %, so tiny wiggles don't look like swings.
+    const all = series.flatMap((s) => s.points.map((p) => p.v));
+    const lo = Math.min(...all);
+    const hi = Math.max(...all);
+    const mid = (lo + hi) / 2;
+    const flat = all.length > 0 && mid > 0 && hi - lo < mid * 0.04;
     const muted = css('--muted');
     chart.current?.destroy();
     chart.current = new Chart(canvas.current, {
@@ -69,6 +75,7 @@ export function PriceChart({ series, height = 220, intraday = false }: { series:
             pointRadius: s.points.length > 40 ? 0 : 2.5,
             pointHitRadius: 10,
             tension: 0.25,
+            cubicInterpolationMode: 'monotone' as const, // never overshoot between points
           })),
       },
       options: {
@@ -78,7 +85,7 @@ export function PriceChart({ series, height = 220, intraday = false }: { series:
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
         scales: {
           x: { type: 'time', adapters: { date: { locale: de } }, time: { tooltipFormat: intraday ? 'dd.MM. HH:mm' : 'dd.MM.yyyy', displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'd. MMM', week: 'd. MMM', month: 'MMM yy' } }, grid: { display: false }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } },
-          y: { grid: { color: grid }, border: { display: false }, ticks: { color: muted, callback: (v) => fmtEur(Number(v)), maxTicksLimit: 6 } },
+          y: { ...(flat ? { suggestedMin: mid * 0.98, suggestedMax: mid * 1.02 } : {}), grid: { color: grid }, border: { display: false }, ticks: { color: muted, callback: (v) => fmtEur(Number(v)), maxTicksLimit: 6 } },
         },
         plugins: {
           legend: { position: 'bottom', labels: { color: muted, boxWidth: 12, boxHeight: 2, font: { size: 11 }, generateLabels: (c) => Chart.defaults.plugins.legend.labels.generateLabels(c).map((l) => ({ ...l, fillStyle: l.strokeStyle })) } },

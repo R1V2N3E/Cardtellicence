@@ -331,7 +331,7 @@ export async function liveHandler(req: Request) {
         const cm = o.cmId ? await officialPrices(o.cmId, '').catch(() => null) : null;
         const rush = cr?.get(o.number);
         items[o.id] = {
-          ...(cm && { cmTrend: cm.trend, cmAvg30: cm.avg30, cmLow: cm.low }),
+          ...(cm && { cmTrend: cm.trend, cmAvg30: cm.avg30, cmAvg7: cm.avg7, cmLow: cm.low }),
           ...(cr && { crJpy: rush?.priceJpy ?? null, crStock: rush?.stock ?? null, crBuyJpy: rush?.buyJpy ?? null, crId: rush?.productId ?? null }),
         };
       }

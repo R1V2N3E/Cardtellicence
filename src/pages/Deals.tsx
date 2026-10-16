@@ -4,6 +4,7 @@ import { CardLink, Chips, ErrorBox, Header, Spinner, Thumb } from '../components
 import { ago, fmtEur, fmtJpy, fmtPct, fmtSigned, marginClass, yuyuteiImg } from '../format';
 import { BUY_LABEL, opportunityMargin, reverseMargin, SELL_LABEL } from '../margin';
 import { useSettings } from '../state';
+import { GearLink } from './Market';
 import { usePullToRefresh, useSwipeTabs } from '../gestures';
 import { SealedSheet, sealedLabel, sealedMargin } from '../components/SealedSheet';
 import type { Opportunity, SealedItem } from '../../lib/types';
@@ -176,9 +177,12 @@ export function Deals() {
             : 'Margen Japan → Deutschland'
         }
         right={
+          <div className="header-actions">
+          <GearLink />
           <button className={`icon-btn ${busy || liveBusy ? 'spinning' : ''}`} disabled={busy || liveBusy} onClick={() => setRefresh((r) => r + 1)} aria-label="Neu laden">
             <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
           </button>
+          </div>
         }
       />
       {toast && (

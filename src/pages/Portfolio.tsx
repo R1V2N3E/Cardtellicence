@@ -49,6 +49,7 @@ export function Portfolio() {
   const { pull, ready } = usePullToRefresh(() => setReloadKey((k) => k + 1));
   const [sort, setSort] = useState<Sort>('value');
   const [q, setQ] = useState('');
+  const [setFilter, setSetFilter] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   useSwipeTabs<Tab>(['cards', 'sealed', 'sets', 'watch'], tab, setTab, !editing);
   const [menu, setMenu] = useState(false);
@@ -176,6 +177,7 @@ export function Portfolio() {
     const s = q.trim().toLowerCase();
     return items
       .filter((i) => (tab === 'sealed' ? isSealed(i) : !isSealed(i)))
+      .filter((i) => !setFilter || i.setId === setFilter)
       .filter((i) => !s || i.nameJa.includes(s) || i.nameEn?.toLowerCase().includes(s) || i.setId.toLowerCase().includes(s) || i.number.includes(s))
       .sort((a, b) => {
         if (sort === 'recent') return b.addedAt.localeCompare(a.addedAt);
@@ -183,17 +185,28 @@ export function Portfolio() {
         if (sort === 'profit') return ((unitValue(b) ?? 0) - (costEur(b) ?? unitValue(b) ?? 0)) * b.qty - ((unitValue(a) ?? 0) - (costEur(a) ?? unitValue(a) ?? 0)) * a.qty;
         return (unitValue(b) ?? 0) * b.qty - (unitValue(a) ?? 0) * a.qty;
       });
-  }, [items, prices, sort, q, fx, tab]);
+  }, [items, prices, sort, q, fx, tab, setFilter]);
 
+  // Per set: cards and sealed products are counted apart, and cards without a price are named
+  // instead of silently counting as 0 €. Each value is exactly the sum of the tiles in that set.
   const sets = useMemo(() => {
-    const m = new Map<string, { setId: string; setName: string; cards: number; value: number; image: string | null; cardId: string }>();
+    type SetRow = { setId: string; setName: string; cards: number; sealed: number; value: number; sealedValue: number; unpriced: number; cardId: string };
+    const m = new Map<string, SetRow>();
     for (const i of items) {
-      const e = m.get(i.setId) ?? { setId: i.setId, setName: i.setName, cards: 0, value: 0, image: i.image, cardId: i.cardId };
-      e.cards += i.qty;
-      e.value += (unitValue(i) ?? 0) * i.qty;
+      const e = m.get(i.setId) ?? { setId: i.setId, setName: i.setName, cards: 0, sealed: 0, value: 0, sealedValue: 0, unpriced: 0, cardId: i.cardId };
+      const v = unitValue(i);
+      if (isSealed(i)) {
+        e.sealed += i.qty;
+        e.sealedValue += (v ?? 0) * i.qty;
+      } else {
+        e.cards += i.qty;
+        e.value += (v ?? 0) * i.qty;
+        if (v == null) e.unpriced += i.qty;
+        if (!e.setName && i.setName) e.setName = i.setName;
+      }
       m.set(i.setId, e);
     }
-    return [...m.values()].sort((a, b) => b.value - a.value);
+    return [...m.values()].sort((a, b) => b.value + b.sealedValue - (a.value + a.sealedValue));
   }, [items, prices]);
 
   const exportJson = () => {
@@ -308,6 +321,21 @@ export function Portfolio() {
 
           {(tab === 'cards' || tab === 'sealed') && (
             <>
+              {setFilter && (
+                <div className="filter-note set-filter">
+                  <span>
+                    Set <b>{setFilter}</b>: {list.length} {list.length === 1 ? 'Eintrag' : 'Einträge'} · {fmtEur(list.reduce((n, i) => n + (unitValue(i) ?? 0) * i.qty, 0))}
+                  </span>
+                  <span className="set-filter-actions">
+                    <button className="chip" onClick={() => navigate(`/market/set/${encodeURIComponent(setFilter)}`)}>
+                      Markt ›
+                    </button>
+                    <button className="chip" onClick={() => setSetFilter(null)}>
+                      ✕
+                    </button>
+                  </span>
+                </div>
+              )}
               {items.length > 0 && (
                 <div className="row-scroll">
                   <Chips<Sort> value={sort} onChange={setSort} options={[['value', 'Wert'], ['recent', 'Neueste'], ['name', 'Name'], ['profit', 'Gewinn']]} />
@@ -390,16 +418,19 @@ export function Portfolio() {
             <ul className="list">
               {sets.map((s) => (
                 <li key={s.setId}>
-                  <button className="deal set-row" onClick={() => (setQ(s.setId), setTab('cards'))}>
+                  <button className="deal set-row" onClick={() => (setSetFilter(s.setId), setQ(''), setTab('cards'))}>
                     <Thumb id={s.cardId} image={null} fallback={`/api/img?set=${encodeURIComponent(s.setId)}`} alt={s.setName} className="thumb pack-thumb" timeout={25000} />
                     <div className="deal-main">
                       <div className="deal-name">{s.setName || s.setId}</div>
                       <div className="deal-meta">
-                        {s.setId} · {s.cards} Karten
+                        {s.setId} · {s.cards} {s.cards === 1 ? 'Karte' : 'Karten'}
+                        {s.sealed > 0 && ` · ${s.sealed} versiegelt (${fmtEur(s.sealedValue)})`}
                       </div>
+                      {s.unpriced > 0 && <div className="deal-meta warn-text">{s.unpriced} ohne Preis – zählen nicht mit</div>}
                     </div>
                     <div className="deal-margin pos">
-                      <strong>{fmtEur(s.value)}</strong>
+                      <strong>{fmtEur(s.value + s.sealedValue)}</strong>
+                      {s.sealed > 0 && <small>davon Karten {fmtEur(s.value)}</small>}
                     </div>
                   </button>
                 </li>

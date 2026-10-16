@@ -18,7 +18,7 @@ import { sealedForSet } from '../lib/sealed.js';
 import type { SealedItem } from '../lib/types.js';
 import { cardmarketFor } from '../lib/prices.js';
 import { getRawCard, getSet, listSets, toSummary } from '../lib/tcgdex.js';
-import type { HistoryFile, Opportunity, OpportunityFile } from '../lib/types.js';
+import type { HistoryFile, MarketFile, Opportunity, OpportunityFile } from '../lib/types.js';
 import { getYuyuteiSet } from '../lib/yuyutei.js';
 
 /**
@@ -104,6 +104,7 @@ async function scanSet(setId: string, all: boolean, jpyToEur: number): Promise<O
       image: s.image,
       cmTrend: cm.trend,
       cmAvg30: cm.avg30,
+      cmAvg7: cm.avg7,
       cmLow: cm.low,
       cmId: cm.idProduct,
       yytJpy: shop?.priceJpy ?? null,
@@ -118,6 +119,45 @@ async function scanSet(setId: string, all: boolean, jpyToEur: number): Promise<O
   }
   log(`  ${setId} ${set.name}: ${candidates.length} cards checked, ${rows.length} priced, ${cr.size} card rush, ${yyt.length} yuyu-tei rows`);
   return rows;
+}
+
+/**
+ * Market index: one entry per day and set (sum of Cardmarket trends, sum of Card Rush prices,
+ * card count). The first run back-fills the days the per-card history already holds.
+ */
+function writeMarket(items: Opportunity[]) {
+  const file = new URL('market.json', OUT_DIR);
+  const market: MarketFile = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { updated: '', days: {} };
+  if (!Object.keys(market.days).length) {
+    const dir = new URL('history/', OUT_DIR);
+    for (const setId of new Set(items.map((i) => i.setId))) {
+      const f = new URL(`${setId}.json`, dir);
+      if (!existsSync(f)) continue;
+      const hist: HistoryFile = JSON.parse(readFileSync(f, 'utf8'));
+      for (const rows of Object.values(hist))
+        for (const [d, cm, , , cr] of rows) {
+          if (d === today) continue;
+          const day = (market.days[d] ??= {});
+          const e = (day[setId] ??= [0, 0, 0]);
+          e[0] += cm ?? 0;
+          e[1] += cr ?? 0;
+          e[2] += 1;
+        }
+    }
+  }
+  const day: Record<string, [number, number, number]> = {};
+  for (const o of items) {
+    const e = (day[o.setId] ??= [0, 0, 0]);
+    e[0] += o.cmTrend ?? 0;
+    e[1] += o.crJpy ?? 0;
+    e[2] += 1;
+  }
+  for (const e of Object.values(day)) e[0] = Math.round(e[0] * 100) / 100;
+  market.days[today] = day;
+  const cutoff = new Date(Date.now() - HISTORY_DAYS * 86400_000).toISOString().slice(0, 10);
+  for (const d of Object.keys(market.days)) if (d < cutoff) delete market.days[d];
+  market.updated = new Date().toISOString();
+  writeFileSync(file, JSON.stringify(market));
 }
 
 function writeHistory(items: Opportunity[]) {
@@ -238,6 +278,7 @@ async function main() {
   const file: OpportunityFile = { generatedAt: new Date().toISOString(), fx, sets: setMeta, items, sealed };
   writeFileSync(outFile, JSON.stringify(file));
   writeHistory(items.filter((o) => sets.includes(o.setId)));
+  writeMarket(items);
   log(`wrote ${items.length} cards`);
 }
 

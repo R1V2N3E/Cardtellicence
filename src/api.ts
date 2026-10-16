@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { IdentifyProgress, IdentifyResult } from '../lib/identify';
-import type { CardReport, CardSummary, ChartPoint, FxRates, HistoryFile, Opportunity, OpportunityFile, SealedItem } from '../lib/types';
+import type { CardReport, CardSummary, ChartPoint, FxRates, HistoryFile, MarketFile, Opportunity, OpportunityFile, SealedItem } from '../lib/types';
 import { readAccessCode } from './state';
 
 /** Current prices for the cards and sealed products of some sets (see /api/live). */
@@ -87,6 +87,7 @@ export const api = {
       if (done) throw new ApiError('failed', 'Verbindung abgebrochen – bitte erneut versuchen.');
     }
   },
+  market: () => getJson<MarketFile>('/data/market.json').catch(() => null),
   history: (setId: string) => getJson<HistoryFile>(`/data/history/${encodeURIComponent(setId)}.json`).catch(() => ({}) as HistoryFile),
 };
 

@@ -2,7 +2,7 @@
 // - HTML, API and scanner data: network first, cached copy when offline.
 // - Built assets: cache first. Card images are left to the browser's HTTP cache: caching
 //   cross-origin (opaque) responses here could pin failed loads and exhaust Safari's quota.
-const VERSION = 'v13';
+const VERSION = 'v14';
 const SHELL = `shell-${VERSION}`;
 
 self.addEventListener('install', (e) => {

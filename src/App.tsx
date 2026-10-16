@@ -6,13 +6,15 @@ import { Scan } from './pages/Scan';
 import { Search } from './pages/Search';
 import { SettingsPage } from './pages/SettingsPage';
 import { Watchlist } from './pages/Watchlist';
+import { Market } from './pages/Market';
+import { MarketSet } from './pages/MarketSet';
 import { usePushSync } from './push';
 
 const TABS = [
   { to: '/', label: 'Deals', icon: 'M3 17l6-6 4 4 8-8M21 7v6M21 7h-6' },
   { to: '/search', label: 'Suche', icon: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5' },
   { to: '/portfolio', label: 'Portfolio', icon: 'M7 4h11a1 1 0 0 1 1 1v13M4 7h11a1 1 0 0 1 1 1v12H5a1 1 0 0 1-1-1z' },
-  { to: '/settings', label: 'Einstellungen', icon: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4' },
+  { to: '/market', label: 'Markt', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
 ];
 
 function Tab({ to, label, icon }: (typeof TABS)[number]) {
@@ -40,19 +42,21 @@ export function App() {
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/market" element={<Market />} />
+          <Route path="/market/set/:id" element={<MarketSet />} />
           <Route path="*" element={<Deals />} />
         </Routes>
       </main>
       <nav className="tabbar">
         <Tab {...TABS[0]} />
-        <Tab {...TABS[1]} />
+        <Tab {...TABS[3]} />
         <NavLink to="/scan" className="scan-fab" aria-label="Karte scannen">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7 12h10" />
           </svg>
         </NavLink>
         <Tab {...TABS[2]} />
-        <Tab {...TABS[3]} />
+        <Tab {...TABS[1]} />
       </nav>
     </div>
   );
