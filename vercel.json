@@ -6,13 +6,7 @@
   ],
   "functions": {
     "api/*.ts": {
-      "maxDuration": 30
-    },
-    "api/agent.ts": {
-      "maxDuration": 120
-    },
-    "api/vision.ts": {
-      "maxDuration": 90
+      "maxDuration": 60
     }
   },
   "rewrites": [

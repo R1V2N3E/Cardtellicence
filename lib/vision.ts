@@ -196,9 +196,9 @@ export async function visionHandler(req: Request): Promise<Response> {
       const reading = await structured<ConditionReading>(
         [...blocks, ...(ref ? [ref] : []), { type: 'text', text: CONDITION_PROMPT(blocks.length > 1, !!ref) }],
         CONDITION_SCHEMA,
-        // A careful look is worth the wait here.
-        'high',
-        { fast: false, maxTokens: 12000 },
+        // A careful look, in fast mode so it fits the function time limit.
+        'medium',
+        { maxTokens: 12000 },
       );
       return reply({ ...reading, reference: !!ref });
     }
