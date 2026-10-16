@@ -46,6 +46,7 @@ export function Thumb({
   eager = false,
   className = 'thumb',
   timeout = 6000,
+  placeholder,
 }: {
   id: string;
   image: string | null;
@@ -56,6 +57,8 @@ export function Thumb({
   className?: string;
   /** How long a source may take before the next one is tried. */
   timeout?: number;
+  /** Shown when no picture could be loaded (instead of a question mark). */
+  placeholder?: ReactNode;
 }) {
   const sources = [...new Set([cardImg(image, size), fallback, `/api/img?id=${encodeURIComponent(id)}${size === 'high' ? '&size=high' : ''}`])].filter(Boolean) as string[];
   const key = sources.join('|');
@@ -70,7 +73,12 @@ export function Thumb({
     return () => clearTimeout(t);
   }, [key, cur.i, cur.loaded]);
 
-  if (cur.i >= sources.length) return <div className={`${className} ph`} aria-label={alt}>?</div>;
+  if (cur.i >= sources.length)
+    return (
+      <div className={`${className} ph`} aria-label={alt}>
+        {placeholder ?? '?'}
+      </div>
+    );
   return (
     <span className={`${className} img-wrap ${cur.loaded ? 'loaded' : 'loading'}`}>
       <img

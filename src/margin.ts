@@ -19,6 +19,19 @@ export interface Margin {
   costs: CostBreakdown | null;
   marginEur: number | null;
   roi: number | null;
+  /** Why the sell price differs from the chosen reference (e.g. hardly any offers). */
+  sellNote?: string;
+}
+
+/**
+ * The Cardmarket price a sale is assumed at. "Lowest offer" is only meaningful with competition:
+ * when the cheapest listing sits far above the trend there are hardly any offers (one seller
+ * asking a fantasy price), so the trend is used instead and the row says so.
+ */
+export function sellPrice(p: { trend: number | null; avg30?: number | null; avg7?: number | null; low?: number | null }, ref: SellRef): { eur: number | null; note?: string } {
+  if (ref === 'low' && p.low != null && p.trend != null && p.low > p.trend * 1.25) return { eur: p.trend, note: 'Trend – kaum Angebote' };
+  const v = ref === 'avg30' ? p.avg30 : ref === 'avg7' ? p.avg7 : ref === 'low' ? p.low : p.trend;
+  return { eur: v ?? p.trend };
 }
 
 /** What it really costs to bring an item from Japan and sell it in Germany. */
@@ -133,9 +146,9 @@ export function opportunityMargin(o: Opportunity, s: Settings, jpyToEur: number)
   if (o.yytJpy && isFresh(o.yytAsOf) && (s.includeSoldOut || o.yytStock !== 0))
     options.push({ source: 'yuyutei', label: 'Yuyu-tei', jpy: o.yytJpy, note: o.yytStock === 0 ? 'ausverkauft' : undefined });
   if (o.snkAskJpy) options.push({ source: 'snkrdunk', label: 'SNKRDUNK', jpy: o.snkAskJpy });
-  const sell = s.sellRef === 'trend' ? o.cmTrend : s.sellRef === 'avg30' ? o.cmAvg30 : s.sellRef === 'low' ? o.cmLow : o.cmTrend;
+  const sell = sellPrice({ trend: o.cmTrend, avg30: o.cmAvg30, avg7: o.cmAvg7, low: o.cmLow }, s.sellRef);
   // The daily scan has no Mercari prices: fall back to the cheapest scanned source instead of hiding the card.
-  return computeMargin(pickBuy(options, s.buySource, true), sell, jpyToEur, costModel(s));
+  return { ...computeMargin(pickBuy(options, s.buySource, true), sell.eur, jpyToEur, costModel(s)), sellNote: sell.note };
 }
 
 export function reportBuyOptions(r: CardReport, includeSoldOut: boolean): BuyOption[] {
@@ -171,9 +184,9 @@ export function sealedBuyOptions(x: SealedItem, includeSoldOut: boolean): BuyOpt
   return out;
 }
 
-export function reportSell(r: CardReport, ref: SellRef): number | null {
-  if (!r.cardmarket.ok) return null;
-  return r.cardmarket[ref] ?? r.cardmarket.trend;
+export function reportSell(r: CardReport, ref: SellRef): { eur: number | null; note?: string } {
+  if (!r.cardmarket.ok) return { eur: null };
+  return sellPrice(r.cardmarket, ref);
 }
 
 /** Germany → Japan: buy on Cardmarket, sell to Card Rush's buyback (買取). */

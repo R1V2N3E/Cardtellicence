@@ -6,7 +6,7 @@ import { BUY_LABEL, opportunityMargin, reverseMargin, SELL_LABEL } from '../marg
 import { useSettings } from '../state';
 import { GearLink } from './Market';
 import { usePullToRefresh, useSwipeTabs } from '../gestures';
-import { SealedSheet, sealedLabel, sealedMargin } from '../components/SealedSheet';
+import { SealedPlaceholder, SealedSheet, sealedLabel, sealedMargin } from '../components/SealedSheet';
 import type { Opportunity, SealedItem } from '../../lib/types';
 
 type Sort = 'margin' | 'roi' | 'value';
@@ -143,6 +143,10 @@ export function Deals() {
       .slice(0, 200);
   }, [data, fx, settings, sort, setFilter, text, onlyPositive]);
 
+  const sealedNoBuy = useMemo(
+    () => (data?.sealed ?? []).filter((x) => !sealedMargin(x, settings, fx ?? data!.fx).buy).length,
+    [data, fx, settings],
+  );
   const sealedRows = useMemo(() => {
     if (!data?.sealed) return [];
     const q = text.trim().toLowerCase();
@@ -151,7 +155,8 @@ export function Deals() {
       .filter((x) => setFilter === 'all' || x.setId === setFilter)
       .filter((x) => !q || x.nameEn.toLowerCase().includes(q) || x.setName.includes(q) || x.setId.toLowerCase().includes(q))
       .map((x) => ({ x, m: sealedMargin(x, settings, rate) }))
-      .filter(({ m }) => !onlyPositive || (m.marginEur ?? 0) > 0)
+      // Without a price to buy at in Japan there is no deal to show.
+      .filter(({ m }) => m.buy && (!onlyPositive || (m.marginEur ?? 0) > 0))
       .sort((a, b) =>
         sort === 'roi' ? (b.m.roi ?? -9) - (a.m.roi ?? -9) : sort === 'value' ? (b.m.sellEur ?? 0) - (a.m.sellEur ?? 0) : (b.m.marginEur ?? -1e9) - (a.m.marginEur ?? -1e9),
       );
@@ -290,7 +295,8 @@ export function Deals() {
           {data && !data.sealed?.length && <p className="empty">Sealed-Daten kommen mit dem nächsten täglichen Scan.</p>}
           {data && !!data.sealed?.length && sealedRows.length < data.sealed.length && (
             <div className="filter-note">
-              {sealedRows.length} von {data.sealed.length} angezeigt{onlyPositive ? ' (nur profitable)' : ''}.
+              {sealedRows.length} von {data.sealed.length} angezeigt{onlyPositive ? ' (nur profitable)' : ''}
+              {sealedNoBuy > 0 ? ` · ${sealedNoBuy} ohne Japan-Preis` : ''}.
               <button className="chip" onClick={resetFilters}>
                 Alle zeigen
               </button>
@@ -300,7 +306,14 @@ export function Deals() {
             {sealedRows.map(({ x, m }) => (
               <li key={x.id}>
                 <button className="deal sealed-row" onClick={() => setOpenSealed(x)}>
-                  <Thumb id={x.id} image={null} fallback={x.image ?? `/api/img?set=${encodeURIComponent(x.setId)}`} alt={x.nameEn} className="thumb sealed-thumb pack-thumb" />
+                  <Thumb
+                    id={x.id}
+                    image={null}
+                    fallback={x.image ?? `/api/img?set=${encodeURIComponent(x.setId)}`}
+                    alt={x.nameEn}
+                    className="thumb sealed-thumb pack-thumb"
+                    placeholder={<SealedPlaceholder setId={x.setId} kind={x.kind} />}
+                  />
                   <div className="deal-main">
                     <div className="deal-name">{x.nameEn}</div>
                     <div className="deal-meta">
@@ -310,7 +323,9 @@ export function Deals() {
                       <span className="jp">
                         🇯🇵 {fmtJpy(m.buy?.jpy)} <small>{m.buy?.label ?? '–'}{m.buy?.note ? ` (${m.buy.note})` : ''}</small>
                       </span>
-                      <span className="de">🇩🇪 {fmtEur(m.sellEur)}</span>
+                      <span className="de">
+                        🇩🇪 {fmtEur(m.sellEur)} {m.sellNote && <small>{m.sellNote}</small>}
+                      </span>
                     </div>
                   </div>
                   <div className={`deal-margin ${marginClass(m.marginEur)}`}>
@@ -350,7 +365,9 @@ export function Deals() {
                   <span className="jp">
                     🇯🇵 {fmtJpy(m.buy!.jpy)} <small>{m.buy!.label}{m.buy!.note ? ` (${m.buy!.note})` : ''}</small>
                   </span>
-                  <span className="de">🇩🇪 {fmtEur(m.sellEur)}</span>
+                  <span className="de">
+                    🇩🇪 {fmtEur(m.sellEur)} {m.sellNote && <small>{m.sellNote}</small>}
+                  </span>
                 </div>
               </div>
               <div className={`deal-margin ${marginClass(m.marginEur)}`}>

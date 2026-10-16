@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { FxRates, SealedItem } from '../../lib/types';
 import { api, useAsync } from '../api';
 import { fmtEur, fmtJpy, fmtPct, fmtSigned, marginClass } from '../format';
-import { computeMargin, costModel, pickBuy, sealedBuyOptions } from '../margin';
+import { computeMargin, costModel, pickBuy, sealedBuyOptions, sellPrice } from '../margin';
 import type { Settings, SellRef } from '../state';
 import { AddSheet } from './AddSheet';
 import { CostLines } from './CostLines';
@@ -11,12 +11,22 @@ import { Chips, Thumb } from './ui';
 
 export const sealedLabel = (s: SealedItem) => (s.kind === 'box' ? 'Display (Box)' : 'Booster (Pack)');
 
-export function sealedSell(s: SealedItem, ref: SellRef) {
-  return ref === 'avg30' ? s.cmAvg30 ?? s.cmTrend : ref === 'low' ? s.cmLow ?? s.cmTrend : s.cmTrend;
+/** Drawn stand-in when no product photo exists: set code and box/pack on a foil-like tile. */
+export function SealedPlaceholder({ setId, kind }: { setId: string; kind: 'box' | 'pack' }) {
+  return (
+    <span className={`sealed-ph ${kind}`}>
+      <b>{setId}</b>
+      <small>{kind === 'box' ? 'DISPLAY' : 'BOOSTER'}</small>
+    </span>
+  );
 }
 
 export function sealedMargin(s: SealedItem, settings: Settings, fx: FxRates) {
-  return computeMargin(pickBuy(sealedBuyOptions(s, settings.includeSoldOut), settings.buySource, true), sealedSell(s, settings.sellRef), fx.jpyToEur, costModel(settings, true));
+  const sell = sellPrice({ trend: s.cmTrend, avg30: s.cmAvg30, low: s.cmLow }, settings.sellRef);
+  return {
+    ...computeMargin(pickBuy(sealedBuyOptions(s, settings.includeSoldOut), settings.buySource, true), sell.eur, fx.jpyToEur, costModel(settings, true)),
+    sellNote: sell.note,
+  };
 }
 
 type Range = 'oneMonth' | 'threeMonths' | 'all';
@@ -60,7 +70,7 @@ export function SealedSheet({ item, fx, settings, onClose }: { item: SealedItem;
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" />
         <div className="sealed-head">
-          <Thumb id={item.id} image={null} fallback={item.image ?? `/api/img?set=${encodeURIComponent(item.setId)}`} alt={item.nameEn} className="thumb sealed-thumb pack-thumb" />
+          <Thumb id={item.id} image={null} fallback={item.image ?? `/api/img?set=${encodeURIComponent(item.setId)}`} alt={item.nameEn} className="thumb sealed-thumb pack-thumb" placeholder={<SealedPlaceholder setId={item.setId} kind={item.kind} />} />
           <div>
             <div className="deal-name big">{item.nameEn}</div>
             <div className="deal-meta">

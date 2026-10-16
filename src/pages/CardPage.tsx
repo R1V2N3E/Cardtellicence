@@ -30,7 +30,11 @@ export function CardPage() {
 
   const options = useMemo(() => (r ? reportBuyOptions(r, settings.includeSoldOut) : []), [r, settings.includeSoldOut]);
   const margin = useMemo(
-    () => (r ? computeMargin(pickBuy(options, buySource, !r.partial), reportSell(r, sellRef), r.fx.jpyToEur, costModel(settings)) : null),
+    () => {
+      if (!r) return null;
+      const sell = reportSell(r, sellRef);
+      return { ...computeMargin(pickBuy(options, buySource, !r.partial), sell.eur, r.fx.jpyToEur, costModel(settings)), sellNote: sell.note };
+    },
     [r, options, buySource, sellRef, settings],
   );
 
@@ -137,7 +141,7 @@ export function CardPage() {
           <div>
             <small>Verkauf auf Cardmarket</small>
             <strong>{fmtEur(margin?.sellEur)}</strong>
-            <span className="muted">{SELL_LABEL[sellRef]}</span>
+            <span className="muted">{margin?.sellNote ?? SELL_LABEL[sellRef]}</span>
           </div>
         </div>
         {margin?.costs && <CostLines m={margin} />}
