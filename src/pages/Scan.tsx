@@ -312,7 +312,7 @@ function ResultSheet({ photo, result, onClose, onAdded }: { photo: string; resul
             <div className="match-alts">
               {result.matches.slice(0, 12).map((m, i) => (
                 <button key={m.id} className={i === pick ? 'alt on' : 'alt'} onClick={() => setPick(i)}>
-                  <Thumb id={m.id} image={m.image} fallback={m.externalImage} alt={m.nameJa} />
+                  <Thumb id={m.id} image={m.image} fallback={m.externalImage} alt={m.nameJa} zoom={false} />
                   <span>
                     {m.setId} {m.number.split('/')[0]}
                   </span>
@@ -374,7 +374,7 @@ function ManualSheet({ photo, reason, onClose, onAdded }: { photo: string | null
         <div className="match-alts wrap">
           {results?.slice(0, 24).map((c) => (
             <button key={c.id} className="alt" onClick={() => setChosen(c)}>
-              <Thumb id={c.id} image={c.image} fallback={c.externalImage} alt={c.nameJa} />
+              <Thumb id={c.id} image={c.image} fallback={c.externalImage} alt={c.nameJa} zoom={false} />
               <span>
                 {c.setId} {c.number}
               </span>

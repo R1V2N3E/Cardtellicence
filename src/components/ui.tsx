@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { prefetchCard, type CardPreview } from '../cardCache';
 import { cardImg } from '../format';
+import { openZoom } from './Zoom';
 
 export function Header({ title, sub, right, back }: { title: string; sub?: ReactNode; right?: ReactNode; back?: boolean }) {
   return (
@@ -47,6 +48,7 @@ export function Thumb({
   className = 'thumb',
   timeout = 6000,
   placeholder,
+  zoom = true,
 }: {
   id: string;
   image: string | null;
@@ -59,6 +61,8 @@ export function Thumb({
   timeout?: number;
   /** Shown when no picture could be loaded (instead of a question mark). */
   placeholder?: ReactNode;
+  /** Tapping the loaded picture opens it full-screen (off where a tap must select something). */
+  zoom?: boolean;
 }) {
   const sources = [...new Set([cardImg(image, size), fallback, `/api/img?id=${encodeURIComponent(id)}${size === 'high' ? '&size=high' : ''}`])].filter(Boolean) as string[];
   const key = sources.join('|');
@@ -80,7 +84,19 @@ export function Thumb({
       </div>
     );
   return (
-    <span className={`${className} img-wrap ${cur.loaded ? 'loaded' : 'loading'}`}>
+    <span
+      className={`${className} img-wrap ${cur.loaded ? 'loaded' : 'loading'}${zoom ? ' zoomable' : ''}`}
+      onClick={
+        zoom && cur.loaded
+          ? (e) => {
+              // open the picture instead of the row's link
+              e.preventDefault();
+              e.stopPropagation();
+              openZoom([sources[cur.i]], 0, alt);
+            }
+          : undefined
+      }
+    >
       <img
         src={sources[cur.i]}
         alt={alt}

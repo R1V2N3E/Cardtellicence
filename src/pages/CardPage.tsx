@@ -1,3 +1,4 @@
+import { openZoom } from '../components/Zoom';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { useCardReport, type CardPreview } from '../cardCache';
@@ -23,7 +24,6 @@ export function CardPage() {
   const watch = useWatchlist();
   const [buySource, setBuySource] = useState<BuySource>(settings.buySource);
   const [sellRef, setSellRef] = useState<SellRef>(settings.sellRef);
-  const [viewer, setViewer] = useState<number | null>(null);
   const [broken, setBroken] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const collection = useCollection();
@@ -99,7 +99,7 @@ export function CardPage() {
               key={src}
               src={src}
               alt={`${card.nameJa} photo ${i + 1}`}
-              onClick={() => setViewer(i)}
+              onClick={() => openZoom(shown, i, card.nameJa)}
               loading={i ? 'lazy' : 'eager'}
               fetchPriority={i ? 'auto' : 'high'}
               onLoad={(e) => e.currentTarget.classList.add('loaded')}
@@ -213,16 +213,6 @@ export function CardPage() {
 
       {adding && <AddSheet card={card} photo={shown[0]} priceEur={r.cardmarket.ok ? r.cardmarket.trend : null} onClose={() => setAdding(false)} />}
 
-      {viewer != null && (
-        <div className="viewer" onClick={() => setViewer(null)} role="dialog" aria-label="Fotos">
-          <div className="viewer-strip" ref={(el) => el?.children[viewer]?.scrollIntoView({ inline: 'center' })}>
-            {shown.map((src) => (
-              <img key={src} src={src.replace('/low.webp', '/high.webp')} alt="" />
-            ))}
-          </div>
-          <div className="viewer-hint">Wischen für mehr · tippen zum Schließen</div>
-        </div>
-      )}
     </>
   );
 }

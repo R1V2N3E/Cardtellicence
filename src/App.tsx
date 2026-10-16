@@ -1,3 +1,4 @@
+import { ZoomViewer } from './components/Zoom';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { CardPage } from './pages/CardPage';
 import { Deals } from './pages/Deals';
@@ -31,7 +32,7 @@ function Tab({ to, label, icon }: (typeof TABS)[number]) {
 export function App() {
   const { pathname } = useLocation();
   usePushSync();
-  if (pathname === '/scan') return <Scan />;
+  if (pathname === '/scan') return (<><Scan /><ZoomViewer /></>);
   return (
     <div className="app">
       <main className="content">
@@ -47,6 +48,7 @@ export function App() {
           <Route path="*" element={<Deals />} />
         </Routes>
       </main>
+      <ZoomViewer />
       <nav className="tabbar">
         <Tab {...TABS[0]} />
         <Tab {...TABS[3]} />

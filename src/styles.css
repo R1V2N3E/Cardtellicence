@@ -842,3 +842,20 @@ html:has(.scan), html:has(.scan) body { background: #07080e; }
 .sealed-ph b { font-family: var(--display); font-size: 13px; letter-spacing: -0.02em; }
 .sealed-ph small { font-size: 7.5px; font-weight: 800; letter-spacing: 0.12em; opacity: 0.9; }
 .thumb.ph:has(.sealed-ph) { padding: 0; background: none; }
+
+/* Full-screen picture viewer (Zoom.tsx) */
+.zoomable { cursor: zoom-in; }
+.zoom { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; animation: zoom-in .22s ease-out; -webkit-user-select: none; user-select: none; }
+@keyframes zoom-in { from { opacity: 0; } }
+.zoom-stage { position: relative; width: 100vw; height: 100dvh; display: flex; align-items: center; justify-content: center; will-change: transform; }
+.zoom-stage img { position: absolute; max-width: calc(100vw - 24px); max-height: calc(100dvh - 140px); object-fit: contain; border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .55); pointer-events: none; }
+.zoom-low { image-rendering: auto; }
+.zoom-hi { opacity: 0; transition: opacity .25s; }
+.zoom-hi.on { opacity: 1; }
+.zoom-close { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 14px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .18); background: rgba(255, 255, 255, .1); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: grid; place-items: center; }
+.zoom-close svg { width: 20px; height: 20px; stroke: #fff; stroke-width: 2.2; fill: none; stroke-linecap: round; }
+.zoom-dots { position: absolute; bottom: calc(env(safe-area-inset-bottom) + 46px); display: flex; gap: 6px; }
+.zoom-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, .3); }
+.zoom-dots i.on { background: #fff; }
+.zoom-hint { position: absolute; bottom: calc(env(safe-area-inset-bottom) + 16px); left: 0; right: 0; text-align: center; font-size: 12px; color: rgba(255, 255, 255, .6); pointer-events: none; }
+.app:has(.zoom) .tabbar { display: none; }
