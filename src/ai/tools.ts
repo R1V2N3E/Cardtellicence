@@ -551,7 +551,8 @@ async function proposeAction(i: Input, toolUseId: string) {
       return { status: 'confirmed', done: 'Alarm angelegt – wird geprüft, solange die App offen ist und beim Öffnen' };
     }
     case 'remember': {
-      const fact = str(i.fact) ?? str(i.summary);
+      // Exactly the text the user saw on the confirmation card.
+      const fact = str(i.fact);
       if (!fact) throw new Error('fact fehlt');
       addMemory(fact);
       return { status: 'confirmed', done: 'Gemerkt' };
@@ -590,6 +591,8 @@ export async function runTool(name: string, input: Input, toolUseId: string): Pr
     }
     throw new Error(`Unbekanntes Werkzeug: ${name}`);
   })();
-  return JSON.stringify(out);
+  const json = JSON.stringify(out);
+  // Keep every result well inside what the server accepts.
+  return json.length > 70_000 ? JSON.stringify({ truncated: true, part: json.slice(0, 69_000) }) : json;
 }
 

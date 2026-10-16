@@ -27,3 +27,10 @@ export async function kvGet<T>(key: string): Promise<T | null> {
 export async function kvSet(key: string, value: unknown): Promise<void> {
   await command(['SET', key, JSON.stringify(value)]);
 }
+
+/** Count a hit in a fixed window; returns the count in the current window. */
+export async function kvIncr(key: string, windowSec: number): Promise<number> {
+  const n = await command<number>(['INCR', key]);
+  if (n === 1) await command(['EXPIRE', key, windowSec]);
+  return n;
+}

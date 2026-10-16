@@ -1,3 +1,4 @@
 import { liveHandler } from '../lib/handlers.js';
+import { limited } from '../lib/security.js';
 
-export const GET = (req: Request) => liveHandler(req);
+export const GET = limited('live', 120, 60, liveHandler);

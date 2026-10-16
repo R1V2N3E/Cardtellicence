@@ -1099,3 +1099,4 @@ html:has(.scan), html:has(.scan) body { background: #07080e; }
 .vs-buttons .vs-buttons { padding: 0; }
 .vs-result .panel .hint { padding: 0; }
 .tax-big span { align-self: flex-start; background: none !important; padding: 0; }
+.ai-confirm-facts { margin: -4px 0 12px; padding: 8px 10px 8px 26px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.45; }

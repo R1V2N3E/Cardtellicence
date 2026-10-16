@@ -25,7 +25,17 @@ export interface MemoryFact {
 }
 export const readMemory = () => readList<MemoryFact>('ct-ai-memory');
 export const useMemory = () => useStored<MemoryFact[]>('ct-ai-memory', readMemory);
-export const addMemory = (text: string) => write('ct-ai-memory', [...readMemory(), { id: crypto.randomUUID(), text, at: new Date().toISOString() }].slice(-40));
+/** One line of plain text: no markup or line breaks that could pose as part of the app's context block. */
+export const cleanFact = (text: string) =>
+  text
+    .replace(/[<>\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+export const addMemory = (text: string) => {
+  const t = cleanFact(text);
+  if (t) write('ct-ai-memory', [...readMemory(), { id: crypto.randomUUID(), text: t, at: new Date().toISOString() }].slice(-40));
+};
 export const removeMemory = (id: string) => write('ct-ai-memory', readMemory().filter((m) => m.id !== id));
 
 // ---- price alerts ----

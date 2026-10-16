@@ -13,6 +13,7 @@ import { externalSnkId, getExternalCard, isExternalId } from './external.js';
 import { cardmarketFor } from './prices.js';
 import { findSnkrdunk, getSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
 import { formatNumber, getCard, getRawCard, printedTotal } from './tcgdex.js';
+import { paidLimits, rateLimit, requireAccess } from './security.js';
 import type { Opportunity, OpportunityFile, SealedItem } from './types.js';
 
 function json(data: unknown, maxAge: number, status = 200): Response {
@@ -152,9 +153,9 @@ async function packImgHandler(url: URL, setId: string) {
 /** POST {image: dataURL} → what Claude read on the card + matching Japanese cards. */
 export async function identifyHandler(req: Request) {
   if (!identifyConfigured()) return json({ error: 'not_configured' }, 0, 501);
-  // Optional shared secret so strangers can't spend the API budget.
-  const code = process.env.APP_ACCESS_CODE;
-  if (code && req.headers.get('x-access-code') !== code) return json({ error: 'access_code' }, 0, 401);
+  // Shared secret so strangers can't spend the API budget, plus rate limits.
+  const denied = (await requireAccess(req)) ?? (await paidLimits(req, 'identify'));
+  if (denied) return denied;
   try {
     const body = (await req.json()) as { image?: string };
     const m = body.image?.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
@@ -193,7 +194,11 @@ export async function pricesHandler(req: Request) {
   const origin = new URL(req.url).origin;
   // ?fresh=1 (refresh in the app): re-read Card Rush instead of using the 30-minute cache.
   const fresh = new URL(req.url).searchParams.get('fresh') === '1';
-  if (fresh) dropCached('cr:');
+  if (fresh) {
+    const limited = await rateLimit(req, 'prices-fresh', 30, 600);
+    if (limited) return limited;
+    dropCached('cr:');
+  }
   const ids = (new URL(req.url).searchParams.get('ids') ?? '').split(',').filter((id) => CARD_ID.test(id)).slice(0, 150);
   try {
     const fx = await getFx().catch(() => null);
@@ -291,10 +296,11 @@ export async function pushHandler(req: Request) {
   try {
     if (req.method === 'GET' && action === 'key') return json({ configured: true, publicKey: await push.publicKey() }, 0);
     if (req.method !== 'POST') return fail('method', 405);
-    if (action === 'check') return json(await push.check(url.origin), 0);
-    // Changing subscriptions needs the access code when one is set.
-    const code = process.env.APP_ACCESS_CODE;
-    if (code && req.headers.get('x-access-code') !== code) return json({ error: 'access_code' }, 0, 401);
+    // Called by the scan jobs (no secret there): a few runs per hour for the whole app at most.
+    if (action === 'check') return (await rateLimit(req, 'push-check', 6, 3600, false)) ?? json(await push.check(url.origin), 0);
+    // Changing subscriptions needs the access code.
+    const denied = (await requireAccess(req)) ?? (await rateLimit(req, 'push-sub', 20, 3600));
+    if (denied) return denied;
     const body = await req.json().catch(() => null);
     if (action === 'subscribe' && body?.subscription?.endpoint && body?.prefs) {
       await push.subscribe(body.subscription, body.prefs, url.origin);
@@ -319,7 +325,12 @@ export async function liveHandler(req: Request) {
   const url = new URL(req.url);
   const sets = (url.searchParams.get('sets') ?? '').split(',').filter((s) => /^[A-Za-z0-9.+-]{1,20}$/.test(s)).slice(0, 12);
   if (!sets.length) return fail('sets required', 400);
-  if (url.searchParams.get('fresh') === '1') dropCached('cr:');
+  if (url.searchParams.get('fresh') === '1') {
+    // A fresh read bypasses the cache and goes to Card Rush and Cardmarket: limit it per IP.
+    const limited = await rateLimit(req, 'live-fresh', 40, 600);
+    if (limited) return limited;
+    dropCached('cr:');
+  }
   try {
     const scan = await cached('scan-file', 5 * 60_000, () => getJson<OpportunityFile>(`${url.origin}/data/opportunities.json`));
     const wanted = new Set(sets);

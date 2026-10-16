@@ -7,7 +7,7 @@ import { runAgent } from '../ai/agent';
 import { answerConfirmation, CONFIRM_EVENT, declineAll, decision, isPending } from '../ai/confirm';
 import { contextText } from '../ai/context';
 import { Markdown } from '../ai/Markdown';
-import { clearChat, readChat, removeMemory, useMemory, writeChat, type ApiMessage } from '../ai/store';
+import { cleanFact, clearChat, readChat, removeMemory, useMemory, writeChat, type ApiMessage } from '../ai/store';
 import { Header, Thumb } from '../components/ui';
 import { fmtEur, fmtJpy } from '../format';
 
@@ -322,7 +322,7 @@ function MessageView({
         out.push(<CardTiles key={i} ids={(input.ids as string[]) ?? []} title={input.title as string | undefined} catalog={catalog} fx={fx} />);
       } else if (b.name === 'propose_action') {
         flushChips();
-        out.push(<ConfirmCard key={i} id={b.id} input={input} result={results.get(b.id)} />);
+        out.push(<ConfirmCard key={i} id={b.id} input={input} result={results.get(b.id)} catalog={catalog} />);
       } else if (b.name === 'open_tool') {
         flushChips();
         const tool = String(input.tool);
@@ -340,13 +340,17 @@ function MessageView({
       const q = (b.input as { query?: string }).query;
       chips.push(<span className="ai-chip" key={i}>🌐 {q ?? 'Websuche'}</span>);
     } else if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) {
-      for (const r of b.content.slice(0, 3))
-        if (r.type === 'web_search_result')
-          chips.push(
-            <a className="ai-chip src" key={`${i}-${r.url}`} href={r.url} target="_blank" rel="noopener noreferrer">
-              {new URL(r.url).hostname.replace(/^www\./, '')}
-            </a>,
-          );
+      for (const r of b.content.slice(0, 3)) {
+        if (r.type !== 'web_search_result') continue;
+        // Only plain web links (never javascript: or data: URLs).
+        const u = safeUrl(r.url);
+        if (!u || (u.protocol !== 'https:' && u.protocol !== 'http:')) continue;
+        chips.push(
+          <a className="ai-chip src" key={`${i}-${r.url}`} href={u.href} target="_blank" rel="noopener noreferrer">
+            {u.hostname.replace(/^www\./, '')}
+          </a>,
+        );
+      }
     }
   });
   flushChips();
@@ -389,7 +393,52 @@ function CardTiles({ ids, title, catalog, fx }: { ids: string[]; title?: string;
   );
 }
 
-function ConfirmCard({ id, input, result }: { id: string; input: Record<string, unknown>; result?: Record<string, unknown> }) {
+const safeUrl = (s: string) => {
+  try {
+    return new URL(s);
+  } catch {
+    return null;
+  }
+};
+
+const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** What the action will really do, from its parameters — not from the model's own summary. */
+function actionDetails(input: Record<string, unknown>, catalog: Map<string, Opportunity | SealedItem>): string[] {
+  const id = typeof input.card_id === 'string' ? input.card_id : null;
+  const c = id ? catalog.get(id) : undefined;
+  const card = id ? `${c ? ('kind' in c ? c.nameEn : ((c as Opportunity).nameEn ?? (c as Opportunity).nameJa)) + ' · ' : ''}${id}` : '–';
+  const qty = Math.max(1, Math.round(n(input.qty) ?? 1));
+  switch (input.action) {
+    case 'watch_add':
+      return [`Karte: ${card}`];
+    case 'collection_add':
+      return [
+        `Karte: ${card}`,
+        `Anzahl: ${qty} · Zustand: ${typeof input.condition === 'string' ? input.condition : 'NM'}`,
+        n(input.cost_amount) ? `Einkauf: ${input.cost_currency === 'EUR' ? fmtEur(n(input.cost_amount)) : fmtJpy(n(input.cost_amount))} / Stück` : 'Einkauf: nicht angegeben',
+      ];
+    case 'sale_record':
+      return [
+        `Karte: ${card}`,
+        `Entfernt ${qty} Stück aus deiner Sammlung`,
+        `Preis: ${n(input.price_eur) != null ? fmtEur(n(input.price_eur)) : '–'} / Stück · Gebühren: ${fmtEur(n(input.fees_eur) ?? 0)}`,
+        `Kanal: ${typeof input.channel === 'string' ? input.channel.slice(0, 40) : 'unbekannt'}`,
+      ];
+    case 'alert_add':
+      return [
+        `Karte: ${card}`,
+        ...(n(input.below_eur) != null ? [`Alarm unter ${fmtEur(n(input.below_eur))}`] : []),
+        ...(n(input.above_eur) != null ? [`Alarm über ${fmtEur(n(input.above_eur))}`] : []),
+        ...(n(input.cr_buy_above_jpy) != null ? [`Alarm Card-Rush-Ankauf über ${fmtJpy(n(input.cr_buy_above_jpy))}`] : []),
+      ];
+    case 'remember':
+      return [`Speichert dauerhaft: „${cleanFact(typeof input.fact === 'string' ? input.fact : '')}“`];
+  }
+  return ['Unbekannte Aktion – nicht bestätigen'];
+}
+
+function ConfirmCard({ id, input, result, catalog }: { id: string; input: Record<string, unknown>; result?: Record<string, unknown>; catalog: Map<string, Opportunity | SealedItem> }) {
   const action = String(input.action);
   const pending = isPending(id);
   const state = result?.status ?? (decision(id) === true ? 'confirmed' : decision(id) === false ? 'declined' : pending ? 'pending' : 'expired');
@@ -399,7 +448,12 @@ function ConfirmCard({ id, input, result }: { id: string; input: Record<string, 
         <span>{ACTION_ICON[action] ?? '✳️'}</span>
         <b>{ACTION_TITLE[action] ?? action}</b>
       </div>
-      <p>{String(input.summary ?? '')}</p>
+      <p>{String(input.summary ?? '').slice(0, 300)}</p>
+      <ul className="ai-confirm-facts">
+        {actionDetails(input, catalog).map((d) => (
+          <li key={d}>{d}</li>
+        ))}
+      </ul>
       {state === 'pending' ? (
         <div className="ai-confirm-btns">
           <button className="ghost-btn" onClick={() => answerConfirmation(id, false)}>
