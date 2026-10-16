@@ -125,7 +125,9 @@ export function Market() {
               <b>7T/30T (Momentum)</b> = Durchschnittspreis der letzten 7 Tage gegenüber dem der letzten 30 Tage – beides echte Verkäufe. Für Sets und
               Generationen der nach Wert gewichtete Median: teure Karten zählen mehr, einzelne Ausreißer mit wenigen Verkäufen kippen das Ergebnis nicht.
               (Bewusst nicht „Trend vs. 30-Tage-Ø“: der Trend ist ein Near-Mint-Preis, im Durchschnitt stecken auch bespielte Karten – das würde bei
-              alten Sets einen falschen Anstieg zeigen.)
+              alten Sets einen falschen Anstieg zeigen.) Karten, deren Durchschnitte stark vom Trend abweichen (unter 60 % oder über 160 %), zählen
+              nicht mit – dort mischen wenige Verkäufe verschiedene Zustände. Sets mit weniger als 5 verwertbaren Karten zeigen kein Momentum. Bei alten,
+              dünn gehandelten Sets (Sonne & Mond) bleibt das Momentum trotzdem schwankender; die tägliche Linie wird mit jedem Scan-Tag verlässlicher.
             </p>
             <p>
               <b>seit …</b> = Veränderung des täglichen Werts seit dem ersten Scan-Tag ({days} {days === 1 ? 'Tag' : 'Tage'} bisher) – wird jeden Tag

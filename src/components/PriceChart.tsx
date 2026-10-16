@@ -84,7 +84,7 @@ export function PriceChart({ series, height = 220, intraday = false }: { series:
         animation: false,
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
         scales: {
-          x: { type: 'time', adapters: { date: { locale: de } }, time: { tooltipFormat: intraday ? 'dd.MM. HH:mm' : 'dd.MM.yyyy', displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'd. MMM', week: 'd. MMM', month: 'MMM yy' } }, grid: { display: false }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } },
+          x: { type: 'time', adapters: { date: { locale: de } }, time: { ...(intraday ? {} : { unit: 'day' as const, minUnit: 'day' as const }), tooltipFormat: intraday ? 'dd.MM. HH:mm' : 'dd.MM.yyyy', displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'd. MMM', week: 'd. MMM', month: 'MMM yy' } }, grid: { display: false }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } },
           y: { ...(flat ? { suggestedMin: mid * 0.98, suggestedMax: mid * 1.02 } : {}), grid: { color: grid }, border: { display: false }, ticks: { color: muted, callback: (v) => fmtEur(Number(v)), maxTicksLimit: 6 } },
         },
         plugins: {

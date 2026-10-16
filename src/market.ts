@@ -6,6 +6,8 @@
 //   Card momentum = 7-day average / 30-day average − 1 (both from real sales). Not "trend vs.
 //                   average": the trend is a near-mint price while the averages include played
 //                   copies, so on older sets that would measure the condition mix, not a move.
+//                   Only counted while both averages stay within 0.6–1.6× the trend: outside
+//                   that band the few sales are a mix of conditions, not a price move.
 //   Set momentum  = value-weighted median of its cards' momentum, so one thinly traded card
 //                   can't move a whole set
 //   JP premium    = Card Rush price (in €) / Cardmarket trend
@@ -42,9 +44,11 @@ export interface GroupStat {
   change30: number | null; // momentum: 7-day vs 30-day average (see top)
   jpValue: number; // Σ Card Rush prices (€) of the cards Card Rush lists
   cards: number;
+  momCards: number; // cards whose momentum counts (see top); few → thin data
   top: CardStat | null;
 }
 
+const plausible = (avg: number, trend: number) => trend > 0 && avg / trend >= 0.6 && avg / trend <= 1.6;
 const ratio = (a: number, b: number) => (b > 0 && a > 0 ? a / b - 1 : null);
 
 export function cardStat(o: Opportunity, jpyToEur: number): CardStat {
@@ -53,7 +57,7 @@ export function cardStat(o: Opportunity, jpyToEur: number): CardStat {
   return {
     o,
     value,
-    mom30: o.cmAvg30 && o.cmAvg7 ? ratio(o.cmAvg7, o.cmAvg30) : null,
+    mom30: o.cmAvg30 && o.cmAvg7 && plausible(o.cmAvg30, value) && plausible(o.cmAvg7, value) ? ratio(o.cmAvg7, o.cmAvg30) : null,
     jpEur,
     jpPremium: jpEur && value > 0 ? jpEur / value : null,
   };
@@ -83,7 +87,7 @@ function aggregate(key: string, name: string, era: Era, cards: CardStat[]): Grou
     if (c.jpEur) jpValue += c.jpEur;
     if (!top || c.value > top.value) top = c;
   }
-  return { key, name, era, value, change30: weightedMedian(m30), jpValue, cards: cards.length, top };
+  return { key, name, era, value, change30: m30.length >= 5 ? weightedMedian(m30) : null, jpValue, cards: cards.length, momCards: m30.length, top };
 }
 
 export interface MarketView {
