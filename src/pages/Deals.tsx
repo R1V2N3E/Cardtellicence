@@ -300,7 +300,7 @@ export function Deals() {
             {sealedRows.map(({ x, m }) => (
               <li key={x.id}>
                 <button className="deal sealed-row" onClick={() => setOpenSealed(x)}>
-                  {x.image ? <img className="thumb sealed-thumb" src={x.image} alt="" loading="lazy" /> : <div className="thumb ph">📦</div>}
+                  <img className="thumb sealed-thumb" src={x.image ?? `/api/img?set=${encodeURIComponent(x.setId)}`} alt="" loading="lazy" />
                   <div className="deal-main">
                     <div className="deal-name">{x.nameEn}</div>
                     <div className="deal-meta">

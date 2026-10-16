@@ -60,7 +60,7 @@ export function SealedSheet({ item, fx, settings, onClose }: { item: SealedItem;
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" />
         <div className="sealed-head">
-          {item.image ? <img src={item.image} alt="" /> : <div className="thumb ph">📦</div>}
+          <img src={item.image ?? `/api/img?set=${encodeURIComponent(item.setId)}`} alt="" />
           <div>
             <div className="deal-name big">{item.nameEn}</div>
             <div className="deal-meta">
