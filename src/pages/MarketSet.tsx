@@ -1,7 +1,6 @@
 import { liveLabel, useLiveScan } from '../live';
 import { LiveProgress, LivePull, LiveRefreshButton } from '../components/LiveBits';
 import { ago } from '../format';
-import { AskAi } from '../components/AskAi';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, loadOpportunities, useAsync } from '../api';
@@ -105,11 +104,6 @@ export function MarketSet() {
           {set.jpValue > 0 && ` In Japan (Card Rush) kosten die gelisteten Karten zusammen ${fmtEur(set.jpValue)}.`}
         </p>
       </section>
-
-      <AskAi
-        ctx={`set:${id}`}
-        prompts={['Analysiere dieses Set für mich', 'Welche Karten sind hier unterbewertet?', 'Lohnt sich ein Display aus Japan?', 'Gibt es News oder Reprints zu dem Set?']}
-      />
 
       {mine.length > 0 && (
         <section className="panel">

@@ -1,7 +1,6 @@
 import { EditItemSheet } from '../components/EditItemSheet';
 import { SellSheet } from '../components/SellSheet';
 import { TaxView } from '../components/TaxView';
-import { AskAi } from '../components/AskAi';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type LivePrice } from '../api';
@@ -242,12 +241,6 @@ export function Portfolio() {
         {pull > 10 && <span className={ready ? 'ready' : ''}>{ready ? 'Loslassen zum Aktualisieren' : 'Ziehen zum Aktualisieren'}</span>}
       </div>
       <AppBar />
-      {items.length > 0 && (
-        <AskAi
-          ctx="portfolio"
-          prompts={['Portfolio-Check: Wo stehe ich?', 'Was sollte ich jetzt verkaufen?', 'Was wird bald steuerfrei?', 'Wo ist mein Klumpenrisiko?']}
-        />
-      )}
       <nav className="seg-tabs">
         {(
           [

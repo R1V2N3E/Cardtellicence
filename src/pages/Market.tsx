@@ -1,6 +1,5 @@
 import { liveLabel, useLiveScan } from '../live';
 import { LiveProgress, LivePull, LiveRefreshButton } from '../components/LiveBits';
-import { AskAi } from '../components/AskAi';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, loadOpportunities, useAsync } from '../api';
@@ -159,8 +158,6 @@ export function Market() {
           </div>
         )}
       </section>
-
-      <AskAi ctx="market" prompts={['Was bewegt den Markt gerade?', 'Welche Generation hat das meiste Potenzial?', 'Zeig mir unterbewertete Karten', 'Wo zieht Cardmarket Japan nach?']} />
 
       <h2 className="section-h">Generationen</h2>
       <ul className="list">

@@ -1,6 +1,5 @@
 import { RefreshIcon } from '../components/RefreshIcon';
 import { refreshLive, useLiveScan } from '../live';
-import { AskAi } from '../components/AskAi';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, loadOpportunities, useAsync } from '../api';
 import { CardLink, Chips, ErrorBox, Header, Spinner, Thumb } from '../components/ui';
@@ -150,7 +149,6 @@ export function Deals() {
           {toast}
         </div>
       )}
-      <AskAi ctx="deals" prompts={['Welche Deals sind wirklich sicher?', 'Plane meinen Einkauf in Tokio', 'Beste Deals unter 50 €', 'Was lohnt sich als Display?']} />
       <div className="seg-tabs deals-seg">
         <button className={kind === 'cards' ? 'seg on' : 'seg'} onClick={() => setKind('cards')}>
           Karten

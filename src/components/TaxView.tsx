@@ -2,7 +2,6 @@ import { useNavigate } from 'react-router-dom';
 import { fmtEur, fmtSigned, marginClass } from '../format';
 import type { CollectionItem } from '../state';
 import { boughtAt, daysUntil, FREIGRENZE_EUR, removeSale, saleGain, taxFreeFrom, useSales, yearTax } from '../tax';
-import { AskAi } from './AskAi';
 
 /** Portfolio → Steuer: realized gains vs. the exemption limit, holding periods, recorded sales. */
 export function TaxView({ items, unitValue }: { items: CollectionItem[]; unitValue: (i: CollectionItem) => number | null }) {
@@ -41,8 +40,6 @@ export function TaxView({ items, unitValue }: { items: CollectionItem[]; unitVal
           steuerfrei – wird die Freigrenze erreicht, ist alles steuerpflichtig. Verluste werden verrechnet. Hinweis, keine Steuerberatung.
         </p>
       </section>
-
-      <AskAi ctx="portfolio" prompts={['Was kann ich dieses Jahr noch steuerfrei verkaufen?', 'Welche Verkäufe sollte ich ins nächste Jahr schieben?', 'Erklär mir die Freigrenze an meinem Beispiel']} />
 
       <section className="panel">
         <h2>Bald steuerfrei</h2>
