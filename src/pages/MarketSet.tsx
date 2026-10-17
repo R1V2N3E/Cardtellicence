@@ -1,3 +1,6 @@
+import { liveLabel, useLiveScan } from '../live';
+import { LiveProgress, LivePull, LiveRefreshButton } from '../components/LiveBits';
+import { ago } from '../format';
 import { AskAi } from '../components/AskAi';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -6,7 +9,7 @@ import { Change, ShareBar } from '../components/MarketBits';
 import { PriceChart, type Series } from '../components/PriceChart';
 import { Chips, ErrorBox, Header, Spinner, Thumb } from '../components/ui';
 import { fmtEur } from '../format';
-import { buildMarket, ERAS, indexSeries, laggards, MOM_LABEL, pct, seriesChange, type CardStat } from '../market';
+import { buildMarket, ERAS, indexSeries, withNow, laggards, MOM_LABEL, pct, seriesChange, type CardStat } from '../market';
 import { useCollection } from '../state';
 import { GearLink, StatRow } from './Market';
 
@@ -15,7 +18,8 @@ const DAY = 86400_000;
 
 export function MarketSet() {
   const id = decodeURIComponent(useParams().id ?? '');
-  const { data, error } = useAsync(() => loadOpportunities(), []);
+  const { data: scan, error } = useAsync(() => loadOpportunities(), []);
+  const { data, live } = useLiveScan(scan);
   const { data: market } = useAsync(() => api.market(), []);
   const { items } = useCollection();
   const [sort, setSort] = useState<CardSort>('value');
@@ -27,7 +31,7 @@ export function MarketSet() {
   const rank = view ? [...view.sets].sort((a, b) => b.value - a.value).findIndex((s) => s.key === id) + 1 : 0;
 
   const series = useMemo((): Series[] => {
-    const daily = indexSeries(market ?? null, [id]);
+    const daily = withNow(indexSeries(market ?? null, [id]), set?.value ?? 0, live.at);
     if (daily.length >= 3) return [{ label: 'Set-Wert (Trendpreise, täglich)', color: '#8b7cff', points: daily }];
     // Until the daily index has a few days: the average sale prices of the last 30 and 7 days
     // (same kind of number, so the line shows a real move).
@@ -44,7 +48,7 @@ export function MarketSet() {
         ],
       },
     ];
-  }, [market, cards, id]);
+  }, [market, cards, id, set?.value, live.at]);
 
   const mine = useMemo(() => {
     const byId = new Map(cards.map((c) => [c.o.id, c]));
@@ -72,7 +76,14 @@ export function MarketSet() {
 
   return (
     <>
-      <Header title={set.name} sub={`${id} · ${era.label} · Rang ${rank} von ${view.sets.length}`} back right={<GearLink />} />
+      <LivePull />
+      <Header
+        title={set.name}
+        sub={`${id} · ${era.label} · Rang ${rank} von ${view.sets.length} · ${liveLabel(live, data!.generatedAt, ago)}`}
+        back
+        right={<LiveRefreshButton />}
+      />
+      <LiveProgress />
 
       <section className="panel market-hero">
         <div className="mh-top">
@@ -82,7 +93,7 @@ export function MarketSet() {
             <div className="pf-value">{fmtEur(set.value)}</div>
             <div className="mh-chips">
               <Change v={set.change30} label={MOM_LABEL} />
-              {seriesChange(indexSeries(market ?? null, [id])) != null && <Change v={seriesChange(indexSeries(market ?? null, [id]))} label="täglich" />}
+              {seriesChange(series[0]?.points ?? []) != null && !series[0]?.label.startsWith('Ø') && <Change v={seriesChange(series[0].points)} label="täglich" />}
             </div>
           </div>
         </div>
@@ -90,7 +101,7 @@ export function MarketSet() {
         <p className="hint">
           {series[0]?.label.startsWith('Ø')
             ? 'Summe der Ø-Verkaufspreise der letzten 30 bzw. 7 Tage. Ab drei Scan-Tagen zeigt die Linie den täglichen Set-Wert.'
-            : 'Täglicher Set-Wert aus dem Scan.'}
+            : `Täglicher Set-Wert aus dem Scan${live.at ? ', letzter Punkt live' : ''}.`}
           {set.jpValue > 0 && ` In Japan (Card Rush) kosten die gelisteten Karten zusammen ${fmtEur(set.jpValue)}.`}
         </p>
       </section>

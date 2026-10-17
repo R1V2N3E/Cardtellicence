@@ -1,3 +1,4 @@
+import { refreshLive, useLiveScan } from '../live';
 import { AskAi } from '../components/AskAi';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, loadOpportunities, useAsync } from '../api';
@@ -24,76 +25,28 @@ export function Deals() {
   const [settings] = useSettings();
   const [refresh, setRefresh] = useState(0);
   const { data: scanData, error, loading } = useAsync(() => loadOpportunities(refresh > 0), [refresh]);
-  // Live prices fetched in the app on refresh, laid over the daily scan.
-  const [live, setLive] = useState<{ items: Record<string, Partial<Opportunity>>; sealed: Record<string, Partial<SealedItem>>; at: string | null; done: number; total: number }>({
-    items: {},
-    sealed: {},
-    at: null,
-    done: 0,
-    total: 0,
-  });
-  const data = useMemo(() => {
-    if (!scanData || !live.at) return scanData;
-    return {
-      ...scanData,
-      items: scanData.items.map((o) => (live.items[o.id] ? { ...o, ...live.items[o.id] } : o)),
-      sealed: scanData.sealed?.map((x) => (live.sealed[x.id] ? { ...x, ...live.sealed[x.id] } : x)),
-    };
-  }, [scanData, live]);
+  // Live prices (shared with the market pages), laid over the daily scan; refreshed when stale.
+  const { data, live } = useLiveScan(scanData);
   // Live ECB rate, so margins follow the current exchange rate rather than the scan's.
   const { data: liveFx, loading: fxLoading } = useAsync(() => api.fx(refresh > 0), [refresh]);
   const fx = liveFx ?? data?.fx;
   const busy = loading || fxLoading;
   const [toast, setToast] = useState<string | null>(null);
+  const liveBusy = live.busy;
   const lastRefresh = useRef(0);
-  // Refresh: re-read Card Rush and Cardmarket for every set, a few sets per request. Runs on its
-  // own (not tied to the scan file reloading at the same time) and stops only when leaving the page.
-  const [liveBusy, setLiveBusy] = useState(false);
-  const scanRef = useRef(scanData);
-  scanRef.current = scanData;
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => void (mounted.current = false);
-  }, []);
+  // Refresh: re-read Card Rush and Cardmarket for every set.
   useEffect(() => {
     if (!refresh || lastRefresh.current === refresh) return;
     lastRefresh.current = refresh;
-    void (async () => {
-      // On the very first load the set list comes with the scan file.
-      const scan = scanRef.current ?? (await loadOpportunities().catch(() => null));
-      if (!scan) return;
-      const sets = scan.sets.map((s) => s.id);
-      const queue: string[][] = [];
-      for (let i = 0; i < sets.length; i += 6) queue.push(sets.slice(i, i + 6));
-      let failed = 0;
-      setLiveBusy(true);
-      setLive((l) => ({ ...l, done: 0, total: sets.length }));
-      const worker = async () => {
-        for (let c = queue.shift(); c && mounted.current; c = queue.shift()) {
-          const patch = await api.live(c, true).catch(() => null);
-          if (!patch) failed += c.length;
-          if (mounted.current)
-            setLive((l) => ({
-              items: { ...l.items, ...patch?.items },
-              sealed: { ...l.sealed, ...patch?.sealed },
-              at: patch?.at ?? l.at,
-              done: l.done + c.length,
-              total: l.total,
-            }));
-        }
-      };
-      await Promise.all([worker(), worker(), worker()]);
-      if (!mounted.current) return;
-      setLiveBusy(false);
+    void refreshLive().then((l) =>
       setToast(
-        failed === sets.length
+        l.failed === l.total
           ? 'Live-Aktualisierung fehlgeschlagen – es gelten die Preise vom Scan.'
-          : failed
-            ? `Teilweise aktualisiert: ${sets.length - failed} von ${sets.length} Sets live`
-            : `Live-Preise ✓ Card Rush & Cardmarket für ${sets.length} Sets`,
-      );
-    })();
+          : l.failed
+            ? `Teilweise aktualisiert: ${l.total - l.failed} von ${l.total} Sets live`
+            : `Live-Preise ✓ Card Rush & Cardmarket für ${l.total} Sets`,
+      ),
+    );
   }, [refresh]);
   // The toast closes itself; its own effect so later re-renders can't cancel the timer.
   useEffect(() => {

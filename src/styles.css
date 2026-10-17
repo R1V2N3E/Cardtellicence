@@ -1112,3 +1112,6 @@ html:has(.scan), html:has(.scan) body { background: #07080e; }
 .edit-actions { display: flex; gap: 8px; margin-top: 8px; }
 .edit-actions > * { flex: 1; }
 .danger-btn { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 35%, transparent); }
+.live-progress { height: 3px; margin: -4px 16px 8px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.live-progress i { display: block; height: 100%; background: var(--grad); transition: width 0.3s; }
+.header > .icon-btn + .icon-btn, .header > .icon-btn + a { margin-left: 6px; }

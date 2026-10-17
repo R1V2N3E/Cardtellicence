@@ -1,5 +1,6 @@
 // The agent's tools, run on the device: market data from the daily scan, live prices from the
 // app's API, the user's collection, settings and sales. Results are compact JSON for Claude.
+import { liveState, withLive } from '../live';
 import type { AgentToolName } from '../../lib/agentTools';
 import type { CardReport, Opportunity, OpportunityFile, SealedItem } from '../../lib/types';
 import { api, loadOpportunities, type LivePrice } from '../api';
@@ -25,10 +26,16 @@ export const CONDITION_FACTOR: Record<Condition, number> = { NM: 1, LP: 0.85, MP
 
 // ---------- shared data ----------
 
-let viewCache: { data: OpportunityFile; view: MarketView } | null = null;
+let viewCache: { key: string; data: OpportunityFile; view: MarketView } | null = null;
+/** The daily scan with the live prices laid over it (when the app has loaded them). */
 async function market() {
-  const data = await loadOpportunities();
-  if (viewCache?.data !== data) viewCache = { data, view: buildMarket(data.items, data.sets, data.fx.jpyToEur) };
+  const scan = await loadOpportunities();
+  const live = liveState();
+  const key = `${scan.generatedAt}|${live.at}|${live.done}`;
+  if (viewCache?.key !== key) {
+    const data = withLive(scan, live);
+    viewCache = { key, data, view: buildMarket(data.items, data.sets, data.fx.jpyToEur) };
+  }
   return viewCache;
 }
 
@@ -303,7 +310,7 @@ async function findOpportunities(i: Input) {
       .filter((x) => x.m.buy && (x.m.marginEur ?? 0) > 0 && (budget == null || (x.m.landedEur ?? Infinity) <= budget))
       .sort((a, b) => b.m.marginEur! - a.m.marginEur!)
       .slice(0, limit);
-    return { kind, cost_settings: settingsSummary(), scan_from: data.generatedAt, results: rows.map(({ o, m }) => ({ ...cardLine(o, view), ...marginJson(m) })) };
+    return { kind, cost_settings: settingsSummary(), scan_from: data.generatedAt, live_prices_from: liveState().at, results: rows.map(({ o, m }) => ({ ...cardLine(o, view), ...marginJson(m) })) };
   }
   if (kind === 'reverse') {
     const rows = data.items
@@ -312,7 +319,7 @@ async function findOpportunities(i: Input) {
       .filter((x) => x.r && x.r.marginEur > 0 && (budget == null || x.r.costEur <= budget))
       .sort((a, b) => b.r!.marginEur - a.r!.marginEur)
       .slice(0, limit);
-    return { kind, scan_from: data.generatedAt, results: rows.map(({ o, r }) => ({ ...cardLine(o, view), buy_cardmarket_eur: r2(r!.buyEur), cost_eur: r2(r!.costEur), card_rush_payout_eur: r2(r!.payoutEur), margin_eur: r2(r!.marginEur), roi_pct: pct(r!.roi) })) };
+    return { kind, scan_from: data.generatedAt, live_prices_from: liveState().at, results: rows.map(({ o, r }) => ({ ...cardLine(o, view), buy_cardmarket_eur: r2(r!.buyEur), cost_eur: r2(r!.costEur), card_rush_payout_eur: r2(r!.payoutEur), margin_eur: r2(r!.marginEur), roi_pct: pct(r!.roi) })) };
   }
   if (kind === 'sealed') {
     const rows = (data.sealed ?? [])

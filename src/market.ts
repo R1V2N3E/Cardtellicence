@@ -171,3 +171,7 @@ export function seriesChange(points: { t: number; v: number }[]): number | null 
 }
 
 export const MOM_LABEL = '7T/30T';
+
+/** Adds the current live value as the newest point of a daily series. */
+export const withNow = (points: { t: number; v: number }[], value: number, at: string | null) =>
+  at && points.length && value > 0 && Date.parse(at) > points[points.length - 1].t ? [...points, { t: Date.parse(at), v: value }] : points;

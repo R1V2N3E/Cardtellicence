@@ -1,3 +1,5 @@
+import { liveLabel, useLiveScan } from '../live';
+import { LiveProgress, LivePull, LiveRefreshButton } from '../components/LiveBits';
 import { AskAi } from '../components/AskAi';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -5,7 +7,7 @@ import { api, loadOpportunities, useAsync } from '../api';
 import { Change, ShareBar, Spark } from '../components/MarketBits';
 import { CardLink, Chips, ErrorBox, Header, Spinner, Thumb } from '../components/ui';
 import { ago, fmtEur, yuyuteiImg } from '../format';
-import { buildMarket, ERAS, indexSeries, jpPremium, laggards, MOM_LABEL, movers, pct, seriesChange, type CardStat, type Era } from '../market';
+import { buildMarket, ERAS, indexSeries, withNow, jpPremium, laggards, MOM_LABEL, movers, pct, seriesChange, type CardStat, type Era } from '../market';
 import { useCollection } from '../state';
 
 type SetSort = 'value' | 'change30' | 'daily' | 'jp';
@@ -51,7 +53,8 @@ export function StatRow({ c, why }: { c: CardStat; why: string }) {
 }
 
 export function Market() {
-  const { data, error, loading } = useAsync(() => loadOpportunities(), []);
+  const { data: scan, error, loading } = useAsync(() => loadOpportunities(), []);
+  const { data, live } = useLiveScan(scan);
   const { data: market } = useAsync(() => api.market(), []);
   const { items } = useCollection();
   const [era, setEra] = useState<Era | 'all'>('all');
@@ -68,7 +71,7 @@ export function Market() {
   }, [items]);
 
   // Change of each set's daily index since the first scan day (grows more meaningful every day).
-  const daily = useMemo(() => new Map(view?.sets.map((s) => [s.key, seriesChange(indexSeries(market ?? null, [s.key]))]) ?? []), [view, market]);
+  const daily = useMemo(() => new Map(view?.sets.map((s) => [s.key, seriesChange(withNow(indexSeries(market ?? null, [s.key]), s.value, live.at))]) ?? []), [view, market, live.at]);
   const days = market ? Object.keys(market.days).length : 0;
   const since = market ? Object.keys(market.days).sort()[0] : null;
   const sinceLabel = since ? `seit ${new Date(since).toLocaleDateString('de-DE', { day: 'numeric', month: 'numeric' })}` : '';
@@ -90,17 +93,29 @@ export function Market() {
     return movers(view, chance === 'up' ? 1 : -1).map((c) => ({ c, why: `Ø 30 Tage ${fmtEur(c.o.cmAvg30)} → Ø 7 Tage ${fmtEur(c.o.cmAvg7)}` }));
   }, [view, chance]);
 
-  const totalSeries = useMemo(() => indexSeries(market ?? null, null), [market]);
+  const totalSeries = useMemo(() => withNow(indexSeries(market ?? null, null), view?.total.value ?? 0, live.at), [market, view, live.at]);
 
   if (error) return (<><Header title="Markt" right={<GearLink />} /><ErrorBox message={error} /></>);
   if (loading || !view || !data) return (<><Header title="Markt" right={<GearLink />} /><Spinner label="Markt wird berechnet…" /></>);
 
-  const eraSeries = (e: Era) => indexSeries(market ?? null, view.sets.filter((s) => s.era === e).map((s) => s.key));
+  const eraSeries = (e: Era) =>
+    withNow(indexSeries(market ?? null, view.sets.filter((s) => s.era === e).map((s) => s.key)), view.eras.find((x) => x.key === e)?.value ?? 0, live.at);
   const maxSet = Math.max(...sets.map((s) => s.value), 1);
 
   return (
     <>
-      <Header title="Markt" sub={`${view.cards.length.toLocaleString('de-DE')} Karten · ${view.sets.length} Sets · Stand ${ago(data.generatedAt)}`} right={<GearLink />} />
+      <LivePull />
+      <Header
+        title="Markt"
+        sub={`${view.cards.length.toLocaleString('de-DE')} Karten · ${view.sets.length} Sets · ${liveLabel(live, data.generatedAt, ago)}`}
+        right={
+          <>
+            <LiveRefreshButton />
+            <GearLink />
+          </>
+        }
+      />
+      <LiveProgress />
 
       <section className="panel market-hero">
         <div className="mh-top">
