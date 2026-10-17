@@ -11,7 +11,22 @@ import { AI_SUGGESTIONS, AI_TOOLS } from './Ai';
 const looksLikeQuestion = (s: string) =>
   /\?\s*$/.test(s) || s.trim().split(/\s+/).length >= 4 || /^(was|wie|wo|wann|welche|welcher|warum|lohnt|soll|kann|zeig|finde|schreib|vergleich|erklär|hilf|gib|ich|mein|meine)\b/i.test(s.trim());
 
-const EXAMPLES = ['Charizard', 'Glurak', '116/80', 'SV2a 201', 'M2a', 'ピカチュウ'];
+const EXAMPLES = ['Glurak', '116/80', 'SV2a 201', 'ピカチュウ'];
+const RECENT = 'ct-recent-search';
+const readRecent = (): string[] => {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT) ?? '[]');
+  } catch {
+    return [];
+  }
+};
+const saveRecent = (q: string) => {
+  try {
+    localStorage.setItem(RECENT, JSON.stringify([q, ...readRecent().filter((r) => r.toLowerCase() !== q.toLowerCase())].slice(0, 8)));
+  } catch {
+    /* optional */
+  }
+};
 
 export function Search() {
   const navigate = useNavigate();
@@ -36,7 +51,11 @@ export function Search() {
     let alive = true;
     setState((s) => ({ ...s, loading: true, error: undefined }));
     api.search(q).then(
-      (results) => alive && setState({ results, loading: false }),
+      (results) => {
+        if (!alive) return;
+        setState({ results, loading: false });
+        if (results.length) saveRecent(q.trim());
+      },
       (e) => alive && setState({ error: e.message, loading: false }),
     );
     return () => {
@@ -78,15 +97,7 @@ export function Search() {
             <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></svg>
           </button>
         )}
-        {!q && !input && (
-          <div className="chips wrap">
-            {EXAMPLES.map((ex) => (
-              <button key={ex} className="chip" onClick={() => (setInput(ex), setParams({ q: ex }))}>
-                {ex}
-              </button>
-            ))}
-          </div>
-        )}
+        {!q && !input && <QuickSearch onPick={(ex) => (setInput(ex), setParams({ q: ex }))} />}
       </div>
       {!q && !input && <AiHub />}
       {state.loading && <Spinner label="Suche…" />}
@@ -116,36 +127,84 @@ export function Search() {
   );
 }
 
-function AiHub() {
-  const navigate = useNavigate();
-  const hasChat = readChat().length > 0;
+function QuickSearch({ onPick }: { onPick: (q: string) => void }) {
+  const [recent, setRecent] = useState(readRecent);
+  const list = recent.length ? recent : EXAMPLES;
   return (
-    <section className="ai-hub">
-      <Link to="/ai" className="ai-hub-hero">
-        <span className="ai-orb" />
-        <div>
-          <b>Cardtelligence KI</b>
-          <small>{hasChat ? 'Unterhaltung fortsetzen' : 'Dein Händler, Analyst und Steuer-Wächter in einem'}</small>
-        </div>
-        <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></svg>
-      </Link>
-      <div className="ai-suggest compact">
-        {AI_SUGGESTIONS.slice(0, 4).map((s) => (
-          <button key={s.text} className="ai-sugg" onClick={() => navigate(`/ai?q=${encodeURIComponent(s.text)}`)}>
-            <span>{s.icon}</span>
-            {s.text}
+    <div className="quick-search">
+      <span className="quick-label">{recent.length ? 'Zuletzt' : 'z. B.'}</span>
+      <div className="quick-row">
+        {list.map((ex) => (
+          <button key={ex} className="quick-chip" onClick={() => onPick(ex)}>
+            {ex}
           </button>
         ))}
       </div>
-      <div className="ai-tools">
-        {AI_TOOLS.slice(0, 2).map((t) => (
-          <Link key={t.to} to={t.to} className="ai-tool">
-            <span className="ai-tool-icon">{t.icon}</span>
-            <b>{t.title}</b>
-            <small>{t.sub}</small>
+      {recent.length > 0 && (
+        <button
+          className="quick-clear"
+          onClick={() => {
+            localStorage.removeItem(RECENT);
+            setRecent([]);
+          }}
+          aria-label="Verlauf löschen"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+const Chevron = () => (
+  <svg className="hub-chevron" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M9 5l7 7-7 7" />
+  </svg>
+);
+
+function AiHub() {
+  const navigate = useNavigate();
+  const hasChat = readChat().length > 0;
+  const ask = (text: string) => navigate(`/ai?q=${encodeURIComponent(text)}`);
+  return (
+    <div className="hub">
+      <h2 className="hub-title">KI-Assistent</h2>
+      <section className="hub-group">
+        <Link to="/ai" className="hub-ai">
+          <span className="ai-orb" />
+          <span className="hub-ai-text">
+            <b>Cardtelligence KI</b>
+            <small>{hasChat ? 'Unterhaltung fortsetzen' : 'Frag nach Preisen, Deals, deiner Sammlung, Steuern'}</small>
+          </span>
+          <Chevron />
+        </Link>
+        {AI_SUGGESTIONS.slice(0, 4).map((s) => (
+          <button key={s.text} className="hub-row" onClick={() => ask(s.text)}>
+            <span className="hub-icon">{s.icon}</span>
+            <span className="hub-row-text">{s.short}</span>
+            <Chevron />
+          </button>
+        ))}
+        <Link to="/ai" className="hub-row more">
+          <span className="hub-icon">✨</span>
+          <span className="hub-row-text">Weitere Ideen</span>
+          <Chevron />
+        </Link>
+      </section>
+
+      <h2 className="hub-title">Kamera-Werkzeuge</h2>
+      <section className="hub-group">
+        {AI_TOOLS.map((t) => (
+          <Link key={t.to} to={t.to} className="hub-row tall">
+            <span className="hub-icon big">{t.icon}</span>
+            <span className="hub-row-text">
+              <b>{t.title}</b>
+              <small>{t.sub}</small>
+            </span>
+            <Chevron />
           </Link>
         ))}
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

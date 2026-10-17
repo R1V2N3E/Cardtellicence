@@ -14,15 +14,15 @@ import { fmtEur, fmtJpy } from '../format';
 type Block = Anthropic.Beta.BetaContentBlock;
 type ToolUse = Extract<Block, { type: 'tool_use' }>;
 
-export const AI_SUGGESTIONS: { icon: string; text: string }[] = [
-  { icon: '💴', text: 'Was sind gerade die besten Deals aus Japan unter 100 €?' },
-  { icon: '📈', text: 'Welche Sets steigen gerade – und welche Karten darin hinken noch hinterher?' },
-  { icon: '🗾', text: 'Ich bin nächste Woche in Tokio mit 1.500 € Budget. Was soll ich kaufen?' },
-  { icon: '💼', text: 'Wie steht mein Portfolio da und was sollte ich jetzt verkaufen?' },
-  { icon: '🧾', text: 'Welche meiner Karten werden bald steuerfrei und wie viel Freigrenze habe ich noch?' },
-  { icon: '✍️', text: 'Schreib mir ein Inserat für meine wertvollste Karte – auf dem Kanal, der am meisten bringt.' },
-  { icon: '🔁', text: 'Welche Karten kann ich hier kaufen und an Card Rush in Japan teurer verkaufen?' },
-  { icon: '🏮', text: 'Was ist in Japan viel mehr wert als bei uns – wo könnte Cardmarket nachziehen?' },
+export const AI_SUGGESTIONS: { icon: string; short: string; text: string }[] = [
+  { icon: '💴', short: 'Beste Deals unter 100 €', text: 'Was sind gerade die besten Deals aus Japan unter 100 €?' },
+  { icon: '📈', short: 'Steigende Sets & Nachzügler', text: 'Welche Sets steigen gerade – und welche Karten darin hinken noch hinterher?' },
+  { icon: '🗾', short: 'Einkauf in Tokio planen', text: 'Ich bin nächste Woche in Tokio mit 1.500 € Budget. Was soll ich kaufen?' },
+  { icon: '💼', short: 'Portfolio-Check', text: 'Wie steht mein Portfolio da und was sollte ich jetzt verkaufen?' },
+  { icon: '🧾', short: 'Bald steuerfrei?', text: 'Welche meiner Karten werden bald steuerfrei und wie viel Freigrenze habe ich noch?' },
+  { icon: '✍️', short: 'Inserat schreiben', text: 'Schreib mir ein Inserat für meine wertvollste Karte – auf dem Kanal, der am meisten bringt.' },
+  { icon: '🔁', short: 'Rückverkauf nach Japan', text: 'Welche Karten kann ich hier kaufen und an Card Rush in Japan teurer verkaufen?' },
+  { icon: '🏮', short: 'In Japan teurer als bei uns', text: 'Was ist in Japan viel mehr wert als bei uns – wo könnte Cardmarket nachziehen?' },
 ];
 
 export const AI_TOOLS = [
