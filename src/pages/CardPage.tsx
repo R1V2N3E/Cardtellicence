@@ -9,7 +9,10 @@ import { PriceChart, type Series } from '../components/PriceChart';
 import { Chips, ErrorBox, Header, Spinner } from '../components/ui';
 import { ago, cardImg, fmtEur, fmtJpy, fmtPct, fmtSigned, fmtUsd, marginClass, shortDate } from '../format';
 import { BUY_LABEL, CHANNEL, computeMargin, costModel, pickBuy, reverseMargin, type Margin, reportBuyOptions, reportSell, SELL_LABEL } from '../margin';
-import { useCollection, useSettings, useWatchlist, type BuySource, type SellChannel, type SellRef, type Settings } from '../state';
+import { CONDITIONS, useCollection, useSettings, useWatchlist, type BuySource, type CollectionItem, type SellChannel, type SellRef, type Settings } from '../state';
+import { boughtAt } from '../tax';
+import { EditItemSheet } from '../components/EditItemSheet';
+import { SellSheet } from '../components/SellSheet';
 import { AddSheet } from '../components/AddSheet';
 import { CostLines } from '../components/CostLines';
 
@@ -27,6 +30,8 @@ export function CardPage() {
   const [sellRef, setSellRef] = useState<SellRef>(settings.sellRef);
   const [broken, setBroken] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [editItem, setEditItem] = useState<CollectionItem | null>(null);
+  const [selling, setSelling] = useState<CollectionItem | null>(null);
   const collection = useCollection();
 
   const options = useMemo(() => (r ? reportBuyOptions(r, settings.includeSoldOut) : []), [r, settings.includeSoldOut]);
@@ -120,6 +125,38 @@ export function CardPage() {
           + Zur Sammlung{owned ? ` (${owned} im Besitz)` : ''}
         </button>
       </section>
+
+      {owned > 0 && (
+        <section className="panel">
+          <h2>In deiner Sammlung</h2>
+          {collection.items
+            .filter((i) => i.cardId === card.id)
+            .map((i) => (
+              <div className="row" key={i.uid}>
+                <span className="row-label">
+                  {i.qty}× {CONDITIONS.find(([v]) => v === i.condition)?.[1] ?? i.condition}
+                  <small className="muted">
+                    {' '}
+                    · gekauft {new Date(boughtAt(i)).toLocaleDateString('de-DE')}
+                    {i.cost ? ` · ${i.cost.currency === 'JPY' ? fmtJpy(i.cost.amount) : fmtEur(i.cost.amount)}/Stk.` : ''}
+                  </small>
+                </span>
+                <button className="link-btn" onClick={() => setEditItem(i)}>
+                  Bearbeiten
+                </button>
+              </div>
+            ))}
+        </section>
+      )}
+      {editItem && (
+        <EditItemSheet
+          item={editItem}
+          valueEur={r.cardmarket.ok ? r.cardmarket.trend : null}
+          onClose={() => setEditItem(null)}
+          onSell={() => (setSelling(editItem), setEditItem(null))}
+        />
+      )}
+      {selling && <SellSheet item={selling} valueEur={r.cardmarket.ok ? r.cardmarket.trend : null} fx={fx.jpyToEur} onClose={() => setSelling(null)} />}
 
       <AskAi
         ctx={`card:${card.id}`}

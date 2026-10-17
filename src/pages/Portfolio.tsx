@@ -1,3 +1,4 @@
+import { EditItemSheet } from '../components/EditItemSheet';
 import { SellSheet } from '../components/SellSheet';
 import { TaxView } from '../components/TaxView';
 import { AskAi } from '../components/AskAi';
@@ -56,6 +57,7 @@ export function Portfolio() {
   const [editing, setEditing] = useState(false);
   useSwipeTabs<Tab>(['cards', 'sealed', 'sets', 'watch', 'tax'], tab, setTab, !editing);
   const [selling, setSelling] = useState<CollectionItem | null>(null);
+  const [editItem, setEditItem] = useState<CollectionItem | null>(null);
   const [menu, setMenu] = useState(false);
   // Start from the last known prices, so the value shows at once and is then refreshed.
   const [rawPrices, setPrices] = useState<Record<string, LivePrice | null>>(() => readPriceCache().prices);
@@ -388,24 +390,14 @@ export function Portfolio() {
                       <div className="pf-edit">
                         <button onClick={() => (i.qty > 1 ? update(i.uid, { qty: i.qty - 1 }) : confirm('Karte entfernen?') && remove(i.uid))}>−</button>
                         <button onClick={() => update(i.uid, { qty: i.qty + 1 })}>+</button>
-                        <select value={i.condition} onChange={(e) => update(i.uid, { condition: e.target.value as Condition })}>
-                          {CONDITIONS.map(([val, label]) => (
-                            <option key={val} value={val}>
-                              {label}
-                            </option>
-                          ))}
-                        </select>
-                        <button onClick={() => setSelling(i)} aria-label="Verkauf eintragen" title="Verkauf eintragen">
-                          💶
-                        </button>
-                        <button className="danger" onClick={() => confirm('Karte entfernen?') && remove(i.uid)} aria-label="Entfernen">
-                          ✕
+                        <button className="pf-edit-open" onClick={() => setEditItem(i)}>
+                          ✎ Bearbeiten
                         </button>
                       </div>
                     </div>
                   ) : (
+                    <div key={i.uid} className="pf-cell">
                     <CardLink
-                      key={i.uid}
                       id={i.cardId}
                       className="pf-tile"
                       preview={{
@@ -415,6 +407,10 @@ export function Portfolio() {
                     >
                       {body}
                     </CardLink>
+                    <button className="pf-edit-btn" onClick={() => setEditItem(i)} aria-label="Eintrag bearbeiten">
+                      <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" /></svg>
+                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -429,6 +425,14 @@ export function Portfolio() {
           )}
 
           {tab === 'tax' && <TaxView items={items} unitValue={unitValue} />}
+          {editItem && (
+            <EditItemSheet
+              item={editItem}
+              valueEur={unitValue(editItem)}
+              onClose={() => setEditItem(null)}
+              onSell={() => (setSelling(editItem), setEditItem(null))}
+            />
+          )}
           {selling && <SellSheet item={selling} valueEur={unitValue(selling)} fx={fx} onClose={() => setSelling(null)} />}
           {tab === 'sets' && (
             <ul className="list">
