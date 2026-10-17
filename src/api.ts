@@ -1,3 +1,4 @@
+import { recordAiUsage } from './ai/usage';
 import { useEffect, useState } from 'react';
 import type { IdentifyProgress, IdentifyResult } from '../lib/identify';
 import type { CardReport, CardSummary, ChartPoint, FxRates, HistoryFile, MarketFile, Opportunity, OpportunityFile, SealedItem } from '../lib/types';
@@ -80,7 +81,10 @@ export const api = {
         buf = buf.slice(nl + 1);
         if (!line) continue;
         const e = JSON.parse(line) as IdentifyProgress;
-        if (e.stage === 'done') return e.result;
+        if (e.stage === 'done') {
+          recordAiUsage('scan', e.result.usage);
+          return e.result;
+        }
         if (e.stage === 'error') throw new ApiError('failed', e.error);
         onProgress?.(e);
       }
@@ -88,7 +92,7 @@ export const api = {
     }
   },
   /** Photo analyses: a shop showcase, or the condition of one card (front, optional back). */
-  vision: async <T,>(task: 'shop' | 'condition', images: string[], cardId?: string | null): Promise<T> => {
+  vision: async <T,>(task: 'shop' | 'bulk' | 'condition', images: string[], cardId?: string | null): Promise<T> => {
     const res = await fetch('/api/vision', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-access-code': readAccessCode() },
@@ -104,6 +108,7 @@ export const api = {
             ? 'Die KI ist auf dem Server nicht eingerichtet.'
             : (body.error ?? `HTTP ${res.status}`),
       );
+    recordAiUsage(task, body.usage);
     return body as T;
   },
   market: () => getJson<MarketFile>('/data/market.json').catch(() => null),

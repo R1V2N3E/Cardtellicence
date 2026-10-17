@@ -5,11 +5,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import { AGENT_TOOL_NAMES, AGENT_TOOLS } from './agentTools.js';
 import { anthropic, identifyConfigured } from './identify.js';
 import { paidLimits, requireAccess } from './security.js';
+import { usageOf, type AiUsage } from './usage.js';
 
 export type AgentEvent =
   | { t: 'text'; d: string }
   | { t: 'status'; d: string } // short progress note ("sucht im Web …")
-  | { t: 'done'; content: Anthropic.Beta.BetaContentBlock[]; stop: string | null }
+  | { t: 'done'; content: Anthropic.Beta.BetaContentBlock[]; stop: string | null; usage?: AiUsage }
   | { t: 'error'; error: string };
 
 const SYSTEM = `Du bist Cardtelligence – der KI-Assistent einer App für japanische Pokémon-Karten. Der Nutzer kauft in Japan und verkauft in Deutschland (und umgekehrt), sammelt und investiert. Du bist ein erfahrener Händler, Sammler und Marktanalyst in einem: ehrlich, konkret, rechnend.
@@ -127,7 +128,7 @@ export async function agentHandler(req: Request): Promise<Response> {
           if (e.type === 'content_block_delta' && e.delta.type === 'thinking_delta' && e.delta.thinking.trim()) send({ t: 'status', d: e.delta.thinking.trim() });
         });
         const final = await stream.finalMessage();
-        send({ t: 'done', content: final.content, stop: final.stop_reason });
+        send({ t: 'done', content: final.content, stop: final.stop_reason, usage: usageOf(final.model, final.usage) });
       } catch (e) {
         // Details go to the server log only; the app gets a plain message.
         console.error('agent', e);

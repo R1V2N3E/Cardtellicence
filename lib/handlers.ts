@@ -14,6 +14,7 @@ import { cardmarketFor } from './prices.js';
 import { findSnkrdunk, getSnkrdunk, getSnkrdunkChart, SNK_CONDITIONS, SNK_RANGES } from './snkrdunk.js';
 import { formatNumber, getCard, getRawCard, printedTotal } from './tcgdex.js';
 import { paidLimits, rateLimit, requireAccess } from './security.js';
+import { currentUsage, withUsage } from './usage.js';
 import type { Opportunity, OpportunityFile, SealedItem } from './types.js';
 
 function json(data: unknown, maxAge: number, status = 200): Response {
@@ -170,10 +171,13 @@ export async function identifyHandler(req: Request) {
         async start(controller) {
           const send = (e: IdentifyProgress) => controller.enqueue(enc.encode(JSON.stringify(e) + '\n'));
           try {
-            send({ stage: 'reading' });
-            const reading = await readCard(photo.data, photo.media);
-            send({ stage: 'read', reading });
-            send({ stage: 'done', result: await matchReading(reading, photo, send) });
+            await withUsage(async () => {
+              send({ stage: 'reading' });
+              const reading = await readCard(photo.data, photo.media);
+              send({ stage: 'read', reading });
+              const result = await matchReading(reading, photo, send);
+              send({ stage: 'done', result: { ...result, usage: currentUsage() } });
+            });
           } catch (e) {
             send({ stage: 'error', error: e instanceof Error ? e.message : String(e) });
           }
@@ -182,8 +186,8 @@ export async function identifyHandler(req: Request) {
       });
       return new Response(stream, { headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
     }
-    const reading = await readCard(photo.data, photo.media);
-    return json(await matchReading(reading, photo), 0);
+    const { result, usage } = await withUsage(async () => matchReading(await readCard(photo.data, photo.media), photo));
+    return json({ ...result, usage }, 0);
   } catch (e) {
     return fail(e);
   }

@@ -40,7 +40,7 @@ export function App() {
     const mode = new URLSearchParams(search).get('mode');
     return (
       <>
-        {mode === 'shop' || mode === 'condition' ? <VisionScan mode={mode} /> : <Scan />}
+        {mode === 'shop' || mode === 'bulk' || mode === 'condition' ? <VisionScan mode={mode} /> : <Scan />}
         <ZoomViewer />
       </>
     );

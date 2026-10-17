@@ -1,3 +1,4 @@
+import { AiCostPanel } from '../components/AiCostPanel';
 import { useEffect, useRef, useState } from 'react';
 import { requestPersistence, storageStatus, type StorageStatus } from '../storage';
 import { DEFAULT_PUSH, disablePush, enablePush, pushServerStatus, pushSupport, readPush, usePushLocal, type PushLocal } from '../push';
@@ -161,6 +162,8 @@ export function SettingsPage() {
         </label>
         <p className="hint">Nur nötig, wenn in Vercel die Variable APP_ACCESS_CODE gesetzt ist. Sie verhindert, dass Fremde über deine Seite Scans auf deine Kosten auslösen.</p>
       </section>
+      <AiCostPanel />
+
       <section className="panel">
         <h2>Daten auf diesem iPhone</h2>
         <div className="row">

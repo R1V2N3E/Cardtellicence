@@ -147,10 +147,10 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'open_tool',
     description:
-      'Offer a button that opens one of the app\'s camera tools: scan (identify one card), shop (photo of a shop showcase → every card with its price tag rated buy/skip), condition (condition, centering, PSA-10 chance and authenticity hints from a photo).',
+      'Offer a button that opens one of the app\'s camera tools: scan (identify one card), bulk (photo of many cards, e.g. a binder page → all added to the collection at once), shop (photo of a shop showcase → every card with its price tag rated buy/skip), condition (condition, centering, PSA-10 chance and authenticity hints from a photo).',
     input_schema: obj(
       {
-        tool: { type: 'string', enum: ['scan', 'shop', 'condition'] },
+        tool: { type: 'string', enum: ['scan', 'bulk', 'shop', 'condition'] },
         card_id: { type: 'string' },
         label: { type: 'string' },
       },

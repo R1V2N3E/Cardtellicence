@@ -4,15 +4,16 @@ import type { CardReport, Opportunity } from '../../lib/types';
 import type { Centering, ConditionReading, ShopCard, ShopReading } from '../../lib/vision';
 import { api, loadOpportunities } from '../api';
 import { ScanModes } from '../components/ScanModes';
+import { BulkMode } from './BulkScan';
 import { Thumb } from '../components/ui';
 import { fmtEur, fmtJpy, fmtSigned } from '../format';
 import { computeMargin, costModel, sellPrice, type Margin } from '../margin';
 import { readSettings } from '../state';
 
-type Mode = 'shop' | 'condition';
+type Mode = 'shop' | 'bulk' | 'condition';
 
 /** Downscale an image file to a JPEG data URL. */
-function fileToJpeg(file: File, maxEdge: number): Promise<string> {
+export function fileToJpeg(file: File, maxEdge: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -30,13 +31,13 @@ function fileToJpeg(file: File, maxEdge: number): Promise<string> {
   });
 }
 
-function PhotoButtons({ onFile, label }: { onFile: (f: File) => void; label: string }) {
+export function PhotoButtons({ onFile, label, quiet = false }: { onFile: (f: File) => void; label: string; quiet?: boolean }) {
   const cam = useRef<HTMLInputElement>(null);
   const lib = useRef<HTMLInputElement>(null);
   const pick = (f?: File) => f && onFile(f);
   return (
     <div className="vs-buttons">
-      <button className="primary-btn" onClick={() => cam.current?.click()}>
+      <button className={quiet ? 'ghost-btn' : 'primary-btn'} onClick={() => cam.current?.click()}>
         📷 {label}
       </button>
       <button className="ghost-btn" onClick={() => lib.current?.click()}>
@@ -48,7 +49,7 @@ function PhotoButtons({ onFile, label }: { onFile: (f: File) => void; label: str
   );
 }
 
-function Working({ photo, steps }: { photo: string; steps: string[] }) {
+export function Working({ photo, steps }: { photo: string; steps: string[] }) {
   const [i, setI] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setI((n) => Math.min(steps.length - 1, n + 1)), 2600);
@@ -80,7 +81,7 @@ export function VisionScan({ mode }: { mode: Mode }) {
         <ScanModes mode={mode} />
         <span style={{ width: 44 }} />
       </header>
-      {mode === 'shop' ? <ShopMode key="shop" /> : <ConditionMode key="condition" />}
+      {mode === 'shop' ? <ShopMode key="shop" /> : mode === 'bulk' ? <BulkMode key="bulk" /> : <ConditionMode key="condition" />}
     </div>
   );
 }

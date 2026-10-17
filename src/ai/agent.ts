@@ -6,6 +6,7 @@ import { ApiError } from '../api';
 import { readAccessCode } from '../state';
 import type { ApiMessage } from './store';
 import { runTool } from './tools';
+import { recordAiUsage } from './usage';
 
 type Block = Anthropic.Beta.BetaContentBlock;
 export type ToolUse = Extract<Block, { type: 'tool_use' }>;
@@ -58,7 +59,10 @@ async function turn(messages: ApiMessage[], cb: LoopCallbacks, signal: AbortSign
         cb.onStatus(null);
       } else if (e.t === 'status') cb.onStatus(e.d.length > 90 ? e.d.slice(0, 88) + ' …' : e.d);
       else if (e.t === 'error') throw new Error(e.error);
-      else if (e.t === 'done') return { content: e.content, stop: e.stop };
+      else if (e.t === 'done') {
+        recordAiUsage('chat', e.usage);
+        return { content: e.content, stop: e.stop };
+      }
     }
   }
   throw new Error('Die Verbindung wurde unterbrochen – bitte nochmal versuchen.');

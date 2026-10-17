@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Opportunity, SealedItem } from '../../lib/types';
 import { loadOpportunities } from '../api';
 import { runAgent } from '../ai/agent';
+import { useChatCost, writeChatCost } from '../ai/usage';
 import { answerConfirmation, CONFIRM_EVENT, declineAll, decision, isPending } from '../ai/confirm';
 import { contextText } from '../ai/context';
 import { Markdown } from '../ai/Markdown';
@@ -28,6 +29,7 @@ export const AI_SUGGESTIONS: { icon: string; short: string; text: string }[] = [
 export const AI_TOOLS = [
   { to: '/scan?mode=shop', icon: '🏪', title: 'Vitrine scannen', sub: 'Alle Karten + Preisschilder → Ampel' },
   { to: '/scan?mode=condition', icon: '🔬', title: 'Zustand & Echtheit', sub: 'Zentrierung, PSA-10-Chance, Fake-Check' },
+  { to: '/scan?mode=bulk', icon: '🗂️', title: 'Mehrere Karten', sub: 'Binder-Seite fotografieren → alle in die Sammlung' },
   { to: '/scan', icon: '📷', title: 'Karte erkennen', sub: 'Eine Karte scannen' },
 ];
 
@@ -86,12 +88,15 @@ export function Ai() {
   const autoSent = useRef(false);
   const [catalog, setCatalog] = useState<Map<string, Opportunity | SealedItem>>(new Map());
   const [fx, setFx] = useState<number | null>(null);
+  const [usdToEur, setUsdToEur] = useState(0.92);
+  const [chatCost] = useChatCost();
 
   useEffect(() => {
     loadOpportunities()
       .then((d) => {
         setCatalog(new Map<string, Opportunity | SealedItem>([...d.items.map((o) => [o.id, o] as const), ...(d.sealed ?? []).map((s) => [s.id, s] as const)]));
         setFx(d.fx.jpyToEur);
+        if (d.fx.usdToEur) setUsdToEur(d.fx.usdToEur);
       })
       .catch(() => {});
     const on = () => force((n) => n + 1);
@@ -168,6 +173,7 @@ export function Ai() {
   const reset = () => {
     stop();
     clearChat();
+    writeChatCost(0);
     setMessages([]);
     setError(null);
   };
@@ -193,7 +199,7 @@ export function Ai() {
     <div className="ai-page">
       <Header
         title="Cardtelligence KI"
-        sub={ctx ? contextLabel(ctx) : 'Markt · Deals · Portfolio · Verkauf · Steuer'}
+        sub={`${ctx ? contextLabel(ctx) : 'Markt · Deals · Portfolio · Verkauf · Steuer'}${chatCost > 0 ? ` · Unterhaltung ≈ ${(chatCost * usdToEur).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}` : ''}`}
         back
         right={
           !empty ? (
@@ -326,8 +332,8 @@ function MessageView({
       } else if (b.name === 'open_tool') {
         flushChips();
         const tool = String(input.tool);
-        const to = tool === 'shop' ? '/scan?mode=shop' : tool === 'condition' ? `/scan?mode=condition${input.card_id ? `&card=${encodeURIComponent(String(input.card_id))}` : ''}` : '/scan';
-        const t = AI_TOOLS.find((x) => x.to.split('&')[0] === to.split('&')[0]) ?? AI_TOOLS[2];
+        const to = tool === 'shop' ? '/scan?mode=shop' : tool === 'bulk' ? '/scan?mode=bulk' : tool === 'condition' ? `/scan?mode=condition${input.card_id ? `&card=${encodeURIComponent(String(input.card_id))}` : ''}` : '/scan';
+        const t = AI_TOOLS.find((x) => x.to.split('&')[0] === to.split('&')[0]) ?? AI_TOOLS[AI_TOOLS.length - 1];
         out.push(
           <button key={i} className="ai-tool wide" onClick={() => navigate(to)}>
             <span className="ai-tool-icon">{t.icon}</span>

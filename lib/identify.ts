@@ -6,6 +6,7 @@
 //   4. Claude compares the photo with the best candidates' images and confirms or rejects.
 //   5. The result carries a confidence level; the app only preselects on "high".
 import Anthropic from '@anthropic-ai/sdk';
+import { recordUsage, type AiUsage } from './usage.js';
 import { externalSummary } from './external.js';
 import { mapLimit, request } from './http.js';
 import { cardsByNumber, resolveSetId } from './search.js';
@@ -34,6 +35,8 @@ export interface IdentifyResult {
   checks: { name: boolean; number: boolean; set: boolean; hp: boolean | null; visual: boolean | null } | null;
   // kept for older clients
   matchedBy: 'set+number' | 'number' | 'name' | 'none';
+  /** What the recognition cost (filled in by the handler). */
+  usage?: AiUsage;
 }
 
 const READ_SCHEMA = {
@@ -120,6 +123,7 @@ export async function structured<T>(
             throw e;
           });
   if (response.stop_reason === 'refusal') throw new Error('Die Erkennung wurde für dieses Bild abgelehnt');
+  recordUsage(response.model, response.usage);
   const text = response.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')?.text;
   if (!text) throw new Error('Keine Antwort der Erkennung');
   return JSON.parse(text) as T;
