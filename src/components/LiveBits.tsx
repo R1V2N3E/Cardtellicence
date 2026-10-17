@@ -1,5 +1,6 @@
 import { usePullToRefresh } from '../gestures';
 import { refreshLive, useLive } from '../live';
+import { RefreshIcon } from './RefreshIcon';
 
 /** Pull down to re-read the live prices (shared with all pages). */
 export function LivePull({ enabled = true }: { enabled?: boolean }) {
@@ -21,8 +22,8 @@ export function LivePull({ enabled = true }: { enabled?: boolean }) {
 export function LiveRefreshButton() {
   const live = useLive();
   return (
-    <button className={`icon-btn ${live.busy ? 'spinning' : ''}`} disabled={live.busy} onClick={() => void refreshLive()} aria-label="Live-Preise laden">
-      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
+    <button className="icon-btn refresh-btn" aria-busy={live.busy} onClick={() => !live.busy && void refreshLive()} aria-label="Live-Preise laden">
+      <RefreshIcon active={live.busy} />
     </button>
   );
 }

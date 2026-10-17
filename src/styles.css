@@ -1115,3 +1115,5 @@ html:has(.scan), html:has(.scan) body { background: #07080e; }
 .live-progress { height: 3px; margin: -4px 16px 8px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
 .live-progress i { display: block; height: 100%; background: var(--grad); transition: width 0.3s; }
 .header > .icon-btn + .icon-btn, .header > .icon-btn + a { margin-left: 6px; }
+.refresh-icon { will-change: transform; transform-origin: 50% 50%; backface-visibility: hidden; }
+.refresh-btn[aria-busy='true'] { color: var(--accent); }
